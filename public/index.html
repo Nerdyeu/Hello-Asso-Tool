@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trombinoscope</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#6b7280; --accent:#2f6fed; --line:#e3e6ec; }
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#6b7280; --accent:#2f6fed; --line:#e3e6ec; --danger:#c0392b; }
   @media (prefers-color-scheme: dark) { :root { --bg:#14171d; --card:#1e232c; --ink:#e8ebf1; --muted:#9aa3b2; --line:#2b3240; } }
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
@@ -13,44 +13,55 @@
   header h1 { font-size:1.15rem; margin:0 auto 0 0; }
   button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
-  button:hover { filter:brightness(.95); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button:hover:not(:disabled) { filter:brightness(.95); }
   main { padding:20px; max-width:1100px; margin:auto; }
   #msg { color:var(--muted); margin:8px 0 16px; }
-  #msg.err { color:#c0392b; }
+  #msg.err { color:var(--danger); }
   .options { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-bottom:12px; color:var(--muted); font-size:.9rem; }
-  .options input[type=text], .options select { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink); }
-  .grid { display:grid; grid-template-columns:repeat(var(--cols,4), 1fr); gap:14px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; text-align:center; break-inside:avoid; page-break-inside:avoid; }
+  .options input[type=text] { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink); }
+
+  /* écran */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; text-align:center; cursor:pointer; position:relative; opacity:.55; }
+  .card.sel { opacity:1; outline:3px solid var(--accent); }
+  .card input[type=checkbox] { position:absolute; top:14px; left:14px; width:20px; height:20px; }
+  .del { position:absolute; top:12px; right:12px; padding:2px 8px; font-size:.75rem; background:rgba(255,255,255,.9); color:var(--danger); border-color:var(--danger); }
   .photo { width:100%; aspect-ratio:3/4; object-fit:cover; border-radius:6px; background:var(--line); display:block; }
   .noimg { display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:2rem; }
-  .card { cursor:pointer; position:relative; opacity:.55; }
-  .card.sel { opacity:1; outline:3px solid var(--accent); }
-  .card input { position:absolute; top:14px; left:14px; width:20px; height:20px; }
-  .badge { position:absolute; top:14px; right:14px; background:#16a34a; color:#fff; font-size:.7rem; padding:2px 6px; border-radius:10px; }
   .nom { font-weight:700; margin-top:8px; }
-  .prenom { }
   .date { color:var(--muted); font-size:.8rem; margin-top:2px; }
-  #dlg { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--ink); max-width:520px; padding:8px 20px 16px; margin:0 0 20px; }
-  #dlg[hidden] { display:none; }
-  #dlg label { display:block; margin:10px 0 2px; font-size:.85rem; color:var(--muted); }
-  #dlg input { width:100%; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
-  #dlg .row { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
-  #status { margin-top:10px; font-size:.9rem; }
-  #status.err { color:#c0392b; } #status.ok { color:#16a34a; }
+  .badge { display:inline-block; margin-top:4px; background:#16a34a; color:#fff; font-size:.7rem; padding:2px 6px; border-radius:10px; }
+
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 20px 16px; margin:0 0 20px; max-width:520px; }
+  .panel[hidden] { display:none; }
+  .panel label { display:block; margin:10px 0 2px; font-size:.85rem; color:var(--muted); }
+  .panel input { width:100%; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
+  .panel .row { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
+  #hiddenPanel { max-width:none; }
+  #hiddenPanel li { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); }
+  #hiddenPanel ul { list-style:none; padding:0; margin:8px 0; }
+  #status { margin-top:10px; font-size:.9rem; } #status.err { color:var(--danger); } #status.ok { color:#16a34a; }
   small { color:var(--muted); }
-  #printTitle { display:none; text-align:center; margin:0 0 10px; }
+
+  /* feuilles d'impression : 20 adhérents max par page (5 colonnes x 4 lignes) */
+  #printArea { display:none; }
 
   @media print {
-    @page { size: A4; margin: 10mm; }
+    @page { size: A4; margin: 8mm; }
     body { background:#fff; color:#000; }
-    header, #msg, .options, #dlg { display:none !important; }
+    header, #screen { display:none !important; }
+    #printArea { display:block; }
     main { padding:0; max-width:none; }
-    #printTitle { display:block; }
-    .card:not(.sel) { display:none !important; }
-    .card input, .badge { display:none !important; }
-    .card { opacity:1; outline:none !important; border:1px solid #bbb; background:#fff; color:#000; padding:4px; }
-    .date { color:#444; }
-    .grid { gap:6px; }
+    .sheet { height:278mm; overflow:hidden; page-break-after:always; break-after:page; }
+    .sheet:last-child { page-break-after:auto; break-after:auto; }
+    .sheet h2 { text-align:center; margin:0 0 3mm; font-size:14pt; height:8mm; line-height:8mm; }
+    .sheet .grid { grid-template-columns:repeat(5, 1fr); gap:3mm; }
+    .sheet .card { cursor:auto; opacity:1; outline:none; border:1px solid #999; border-radius:2mm; background:#fff; color:#000; padding:1.5mm; }
+    .sheet .photo { width:100%; height:44mm; aspect-ratio:auto; object-fit:cover; border-radius:1mm; }
+    .sheet .nom { font-size:9.5pt; margin-top:1.5mm; line-height:1.15; }
+    .sheet .prenom { font-size:9.5pt; line-height:1.15; }
+    .sheet .date { color:#444; font-size:7.5pt; }
   }
 </style>
 </head>
@@ -59,97 +70,122 @@
   <h1>Trombinoscope de l'association</h1>
   <button id="btnReload">Actualiser</button>
   <button id="btnSettings">Réglages</button>
+  <button id="btnQuit">Quitter</button>
   <button id="btnPrint" class="primary" disabled>Trombinoscope (0)</button>
 </header>
 <main>
-  <section id="dlg" hidden>
-    <h3>Réglages HelloAsso</h3>
-    <small>Saisis une seule fois : ils sont mémorisés sur cet ordinateur.</small>
-    <label>Client ID</label><input id="cClientId" autocomplete="off">
-    <label>Client Secret</label><input id="cClientSecret" type="password" autocomplete="off">
-    <label>Slug de l'organisation <small>(dans l'URL de votre page HelloAsso)</small></label><input id="cOrg">
-    <label>Type de formulaire <small>(optionnel, ex : Membership)</small></label><input id="cFormType">
-    <label>Slug du formulaire <small>(optionnel, ex : adhesion-2025-2026)</small></label><input id="cFormSlug">
-    <label>Nom du champ photo <small>(optionnel, détection auto sinon)</small></label><input id="cPhoto">
-    <label>Adhésions depuis le <small>(optionnel)</small></label><input id="cSince" type="date">
-    <div id="status"></div>
-    <div class="row">
-      <button id="btnDebug">Diagnostic</button>
-      <button id="btnTest">Tester la connexion</button>
-      <button id="btnCancel">Fermer</button>
-      <button id="btnSave" class="primary">Enregistrer</button>
-    </div>
-    <pre id="debugOut" style="max-height:200px;overflow:auto;font-size:.75rem;display:none"></pre>
-  </section>
-  <div id="msg">Chargement…</div>
-  <div class="options">
-    <label>Titre <input type="text" id="title" value="Trombinoscope"></label>
-    <label>Colonnes
-      <select id="cols"><option>3</option><option>4</option><option selected>5</option><option>6</option></select>
-    </label>
-    <label><input type="checkbox" id="showDate" checked> Afficher la date d'adhésion</label>
-    <label>Filtre <input type="text" id="filter" placeholder="nom…"></label>
-  </div>
-  <div class="options">
-    <button id="btnNew">Sélectionner les nouveaux</button>
-    <button id="btnAll">Tout sélectionner</button>
-    <button id="btnNone">Tout désélectionner</button>
-  </div>
-  <h2 id="printTitle"></h2>
-  <div class="grid" id="grid"></div>
-</main>
+  <div id="screen">
+    <section id="dlg" class="panel" hidden>
+      <h3>Réglages HelloAsso</h3>
+      <small>Saisis une seule fois : ils sont mémorisés sur cet ordinateur.</small>
+      <label>Client ID</label><input id="cClientId" autocomplete="off">
+      <label>Client Secret</label><input id="cClientSecret" type="password" autocomplete="off">
+      <label>Slug de l'organisation <small>(dans l'URL de votre page HelloAsso)</small></label><input id="cOrg">
+      <label>Campagnes à inclure <small>(mots du nom du formulaire, séparés par des virgules)</small></label><input id="cCampaigns">
+      <label>Type de formulaire <small>(optionnel, ex : Membership)</small></label><input id="cFormType">
+      <label>Slug du formulaire <small>(optionnel)</small></label><input id="cFormSlug">
+      <label>Nom du champ photo <small>(optionnel, détection auto sinon)</small></label><input id="cPhoto">
+      <label>Adhésions depuis le <small>(optionnel)</small></label><input id="cSince" type="date">
+      <div id="status"></div>
+      <div class="row">
+        <button id="btnDebug">Diagnostic</button>
+        <button id="btnTest">Tester la connexion</button>
+        <button id="btnCancel">Fermer</button>
+        <button id="btnSave" class="primary">Enregistrer</button>
+      </div>
+      <pre id="debugOut" style="max-height:200px;overflow:auto;font-size:.75rem;display:none"></pre>
+    </section>
 
+    <div id="msg">Chargement…</div>
+    <div class="options">
+      <label>Titre <input type="text" id="title" value="Trombinoscope"></label>
+      <label><input type="checkbox" id="showDate" checked> Afficher la date d'adhésion</label>
+      <label>Filtre <input type="text" id="filter" placeholder="nom…"></label>
+    </div>
+    <div class="options">
+      <button id="btnNew">Sélectionner les nouveaux</button>
+      <button id="btnAll">Tout sélectionner</button>
+      <button id="btnNone">Tout désélectionner</button>
+      <button id="btnHidden">Retirés (0)</button>
+      <span id="pages"></span>
+    </div>
+    <section id="hiddenPanel" class="panel" hidden>
+      <h3>Adhérents retirés du trombinoscope</h3>
+      <small>Ils ne sont retirés que dans cet outil. Rien n'est supprimé chez HelloAsso.</small>
+      <ul id="hiddenList"></ul>
+    </section>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div id="printArea"></div>
+</main>
 
 <script>
 const $ = id => document.getElementById(id);
-let members = [];
+const PER_PAGE = 20;
+let members = [], hidden = {};
 const selected = new Set(), printed = new Set();
 const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const visible = () => members.filter(m => !hidden[m.key]);
+
+function cardHtml(m, { interactive }) {
+  const photo = m.photo ? `<img class="photo" ${interactive ? 'loading="lazy"' : ''} src="/api/photo?u=${encodeURIComponent(m.photo)}" alt="">`
+                        : `<div class="photo noimg">?</div>`;
+  return `<div class="card${interactive && selected.has(m.key) ? ' sel' : ''}" data-key="${esc(m.key)}">
+    ${interactive ? `<input type="checkbox" ${selected.has(m.key) ? 'checked' : ''}><button class="del" title="Retirer du trombinoscope (pas de suppression chez HelloAsso)">Retirer</button>` : ''}
+    ${photo}
+    <div class="nom">${esc(m.lastName.toUpperCase())}</div>
+    <div class="prenom">${esc(m.firstName)}</div>
+    ${$('showDate').checked ? `<div class="date">Adhérent depuis le ${fmtDate(m.date)}</div>` : ''}
+    ${interactive && printed.has(m.key) ? '<span class="badge">déjà imprimé</span>' : ''}
+  </div>`;
+}
 
 function render() {
   const f = $('filter').value.trim().toLowerCase();
-  const list = members.filter(m => !f || (m.firstName + ' ' + m.lastName).toLowerCase().includes(f));
-  $('grid').style.setProperty('--cols', $('cols').value);
-  $('printTitle').textContent = $('title').value;
-  $('grid').innerHTML = list.map(m => `
-    <div class="card${selected.has(m.id) ? ' sel' : ''}" data-id="${m.id}">
-      <input type="checkbox" ${selected.has(m.id) ? 'checked' : ''}>
-      ${printed.has(m.id) ? '<span class="badge">déjà imprimé</span>' : ''}
-      ${m.photo ? `<img class="photo" loading="lazy" src="/api/photo?u=${encodeURIComponent(m.photo)}" alt="">`
-                : `<div class="photo noimg">?</div>`}
-      <div class="nom">${esc(m.lastName.toUpperCase())}</div>
-      <div class="prenom">${esc(m.firstName)}</div>
-      ${$('showDate').checked ? `<div class="date">Adhérent depuis le ${fmtDate(m.date)}</div>` : ''}
-    </div>`).join('');
-  $('btnPrint').textContent = `Trombinoscope (${selected.size})`;
-  $('btnPrint').disabled = selected.size === 0;
+  const list = visible().filter(m => !f || (m.firstName + ' ' + m.lastName).toLowerCase().includes(f));
+  $('grid').innerHTML = list.map(m => cardHtml(m, { interactive: true })).join('');
+  const n = visible().filter(m => selected.has(m.key)).length;
+  $('btnPrint').textContent = `Trombinoscope (${n})`;
+  $('btnPrint').disabled = n === 0;
+  $('pages').textContent = n ? `→ ${Math.ceil(n / PER_PAGE)} page(s) A4, ${PER_PAGE} adhérents maximum par page` : '';
+  const hc = Object.keys(hidden).length;
+  $('btnHidden').textContent = `Retirés (${hc})`;
+  renderHidden();
 }
-const toggle = id => { selected.has(id) ? selected.delete(id) : selected.add(id); render(); };
-$('grid').addEventListener('click', e => {
-  const c = e.target.closest('.card'); if (c) toggle(Number(c.dataset.id));
-});
-$('btnAll').onclick = () => { members.forEach(m => selected.add(m.id)); render(); };
-$('btnNone').onclick = () => { selected.clear(); render(); };
-$('btnNew').onclick = () => { selected.clear(); members.filter(m => !printed.has(m.id)).forEach(m => selected.add(m.id)); render(); };
-window.addEventListener('afterprint', async () => {
-  if (!selected.size) return;
-  if (confirm(`Marquer ces ${selected.size} adhérent(s) comme imprimés ?\n(« Sélectionner les nouveaux » ne les proposera plus.)`)) {
-    const ids = [...selected];
-    await fetch('/api/printed', { method: 'POST', body: JSON.stringify(ids) });
-    ids.forEach(i => printed.add(i)); render();
-  }
-});
+
+function renderHidden() {
+  $('hiddenList').innerHTML = Object.entries(hidden).map(([k, h]) =>
+    `<li><span>${esc((h.lastName || '').toUpperCase())} ${esc(h.firstName || '')}</span><button data-restore="${esc(k)}">Remettre</button></li>`
+  ).join('') || '<li><small>Aucun adhérent retiré.</small></li>';
+}
+
+// construit les feuilles d'impression : 20 adhérents par page
+function buildPrint() {
+  const list = visible().filter(m => selected.has(m.key));
+  const pages = [];
+  for (let i = 0; i < list.length; i += PER_PAGE) pages.push(list.slice(i, i + PER_PAGE));
+  $('printArea').innerHTML = pages.map((p, i) => `
+    <div class="sheet"><h2>${esc($('title').value)}${pages.length > 1 ? ` — page ${i + 1}/${pages.length}` : ''}</h2>
+    <div class="grid">${p.map(m => cardHtml(m, { interactive: false })).join('')}</div></div>`).join('');
+}
 
 async function load() {
   $('msg').className = ''; $('msg').textContent = 'Chargement des adhérents…';
   try {
     const r = await fetch('/api/members'); const j = await r.json();
     if (!r.ok) throw new Error(j.error);
-    members = j;
-    (await (await fetch('/api/printed')).json()).forEach(i => printed.add(i));
-    const sans = members.filter(m => !m.photo).length;
-    $('msg').textContent = `${members.length} adhérent(s)` + (sans ? ` — ${sans} sans photo (voir Réglages > Diagnostic)` : '');
+    members = j.members;
+    printed.clear(); (await (await fetch('/api/printed')).json()).forEach(k => printed.add(k));
+    hidden = await (await fetch('/api/hidden')).json();
+    const v = visible(), sans = v.filter(m => !m.photo).length;
+    let t = `${v.length} adhérent(s)` + (sans ? ` — ${sans} sans photo` : '');
+    if (!v.length) {
+      const names = Object.entries(j.forms).map(([n, c]) => `${n} (${c})`).join(' ; ') || 'aucune';
+      t = `Aucun adhérent trouvé (${j.matched} correspondant aux campagnes sur ${j.total}). Campagnes présentes sur HelloAsso : ${names}. Vérifiez « Campagnes à inclure » dans Réglages.`;
+    }
+    $('msg').textContent = t;
     render();
   } catch (e) {
     $('msg').className = 'err'; $('msg').textContent = e.message;
@@ -157,10 +193,46 @@ async function load() {
   }
 }
 
+// ----- actions sur les cartes -----
+$('grid').addEventListener('click', async e => {
+  const c = e.target.closest('.card'); if (!c) return;
+  const key = c.dataset.key;
+  if (e.target.closest('.del')) {
+    const m = members.find(x => x.key === key);
+    if (!confirm(`Retirer ${m.firstName} ${m.lastName} du trombinoscope ?\n\n(Ne supprime rien chez HelloAsso. Vous pourrez le remettre via « Retirés ».)`)) return;
+    hidden = await (await fetch('/api/hidden', { method: 'POST', body: JSON.stringify({ add: [m] }) })).json();
+    selected.delete(key); render(); return;
+  }
+  selected.has(key) ? selected.delete(key) : selected.add(key); render();
+});
+$('hiddenList').addEventListener('click', async e => {
+  const k = e.target.dataset.restore; if (!k) return;
+  hidden = await (await fetch('/api/hidden', { method: 'POST', body: JSON.stringify({ remove: [k] }) })).json();
+  render();
+});
+$('btnHidden').onclick = () => { $('hiddenPanel').hidden = !$('hiddenPanel').hidden; };
+$('btnAll').onclick = () => { visible().forEach(m => selected.add(m.key)); render(); };
+$('btnNone').onclick = () => { selected.clear(); render(); };
+$('btnNew').onclick = () => { selected.clear(); visible().filter(m => !printed.has(m.key)).forEach(m => selected.add(m.key)); render(); };
+
+// ----- impression -----
+$('btnPrint').onclick = () => { buildPrint(); window.print(); };
+window.addEventListener('beforeprint', buildPrint);
+window.addEventListener('afterprint', async () => {
+  const keys = visible().filter(m => selected.has(m.key)).map(m => m.key);
+  if (!keys.length) return;
+  if (confirm(`Marquer ces ${keys.length} adhérent(s) comme imprimés ?\n(« Sélectionner les nouveaux » ne les proposera plus.)`)) {
+    await fetch('/api/printed', { method: 'POST', body: JSON.stringify(keys) });
+    keys.forEach(k => printed.add(k)); render();
+  }
+});
+
+// ----- réglages -----
 async function openSettings() {
   const c = await (await fetch('/api/config')).json();
   $('cClientId').value = c.clientId; $('cClientSecret').value = c.clientSecret;
-  $('cOrg').value = c.organizationSlug; $('cFormType').value = c.formType; $('cFormSlug').value = c.formSlug;
+  $('cOrg').value = c.organizationSlug; $('cCampaigns').value = c.campaigns;
+  $('cFormType').value = c.formType; $('cFormSlug').value = c.formSlug;
   $('cPhoto').value = c.photoField; $('cSince').value = c.since;
   $('debugOut').style.display = 'none';
   setStatus('');
@@ -171,11 +243,11 @@ function setStatus(t, cls = '') { $('status').textContent = t; $('status').class
 async function saveSettings() {
   const r = await fetch('/api/config', { method: 'POST', body: JSON.stringify({
     clientId: $('cClientId').value.trim(), clientSecret: $('cClientSecret').value.trim(),
-    organizationSlug: $('cOrg').value.trim(), formType: $('cFormType').value.trim(),
-    formSlug: $('cFormSlug').value.trim(), photoField: $('cPhoto').value.trim(), since: $('cSince').value }) });
+    organizationSlug: $('cOrg').value.trim(), campaigns: $('cCampaigns').value.trim(),
+    formType: $('cFormType').value.trim(), formSlug: $('cFormSlug').value.trim(),
+    photoField: $('cPhoto').value.trim(), since: $('cSince').value }) });
   if (!r.ok) throw new Error((await r.json()).error || 'Enregistrement impossible');
 }
-
 $('btnSave').onclick = async () => {
   try { await saveSettings(); setStatus('Enregistré.', 'ok'); $('dlg').hidden = true; load(); }
   catch (e) { setStatus(e.message, 'err'); }
@@ -199,8 +271,16 @@ $('btnDebug').onclick = async () => {
 };
 $('btnSettings').onclick = () => { $('dlg').hidden ? openSettings() : ($('dlg').hidden = true); };
 $('btnReload').onclick = load;
-$('btnPrint').onclick = () => { render(); window.print(); };
-['title','cols','showDate','filter'].forEach(id => $(id).addEventListener('input', render));
+$('btnQuit').onclick = async () => {
+  if (!confirm("Fermer l'application ?")) return;
+  try { await fetch('/api/quit'); } catch {}
+  document.body.innerHTML = '<p style="padding:40px;font-family:sans-serif">Application fermée. Vous pouvez fermer cet onglet.</p>';
+};
+['title', 'showDate', 'filter'].forEach(id => $(id).addEventListener('input', render));
+
+// signale au programme que la page est ouverte (il se ferme tout seul quand l'onglet est fermé)
+const ping = () => fetch('/api/ping').catch(() => {});
+ping(); setInterval(ping, 20000);
 load();
 </script>
 </body>

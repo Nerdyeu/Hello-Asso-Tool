@@ -11,7 +11,7 @@ const os = require('os');
 const DATA_ROOT = process.platform === 'win32' ? (process.env.APPDATA || APP_DIR)
   : process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support')
   : (process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'));
-const DATA_DIR = path.join(DATA_ROOT, 'Trombinoscope-HelloAsso');
+const DATA_DIR = process.env.TROMBI_DATA_DIR || path.join(DATA_ROOT, 'Trombinoscope-HelloAsso');  // variable : tests uniquement
 function openBrowser(url) {
   const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
   exec(cmd);
@@ -19,7 +19,7 @@ function openBrowser(url) {
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {}
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const PORT = 3737;
-const API = 'https://api.helloasso.com';
+const API = process.env.HELLOASSO_API || 'https://api.helloasso.com';  // surchargeable pour les tests
 
 const DEFAULT_CONFIG = {
   clientId: '',
@@ -28,7 +28,8 @@ const DEFAULT_CONFIG = {
   formType: '',      // ex: Membership (vide = tous les formulaires de l'asso)
   formSlug: '',      // ex: adhesion-2025-2026 (vide = tous)
   photoField: '',    // nom du champ personnalisé contenant la photo (vide = détection auto)
-  since: ''          // date AAAA-MM-JJ : ne garder que les adhésions depuis cette date
+  since: '',         // date AAAA-MM-JJ : ne garder que les adhésions depuis cette date
+  campaigns: 'Nouveaux adhérents : Adhésion 2027, Nouveaux adhérents : Adhésion 2026, Anciens adhérents'  // campagnes à inclure, séparées par des virgules
 };
 
 function loadConfig() {
@@ -96,33 +97,59 @@ function findPhoto(item, photoField) {
   return f ? f.answer.trim() : null;
 }
 
+// minuscules, sans accents, tirets/espaces normalisés : sert aux comparaisons de noms et de campagnes
+const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+// mots d'un texte, sans « s » final : « Anciens adhérents » ≈ « ancien adhérent »
+const tokens = s => norm(s).split(' ').filter(Boolean).map(w => w.length > 3 ? w.replace(/s$/, '') : w);
+// vrai si tous les mots de la campagne recherchée sont dans le nom du formulaire
+const campaignMatches = (haystack, term) => { const h = new Set(tokens(haystack)); const t = tokens(term); return t.length > 0 && t.every(w => h.has(w)); };
+
+function campaignLabel(item) {
+  const o = item.order || {};
+  return o.formName || item.formName || o.formSlug || item.formSlug || item.name || '';
+}
+// texte sur lequel on compare les campagnes : nom + slug du formulaire + nom de l'article
+function campaignHaystack(item) {
+  const o = item.order || {};
+  return [o.formName, item.formName, o.formSlug, item.formSlug, item.name].filter(Boolean).join(' ');
+}
+
 function toMember(item, cfg) {
   const u = item.user || {}, pay = item.payer || {};
-  const first = u.firstName || pay.firstName || '';
-  const last = u.lastName || pay.lastName || '';
+  const first = (u.firstName || pay.firstName || '').trim();
+  const last = (u.lastName || pay.lastName || '').trim();
   return {
     id: item.id,
+    key: norm(first) + '|' + norm(last),
     firstName: first,
     lastName: last,
     date: (item.order && item.order.date) || null,
     photo: findPhoto(item, cfg.photoField),
-    form: item.name || ''
+    campaign: campaignLabel(item)
   };
 }
 
 async function getMembers(cfg) {
   const items = await fetchItems(cfg);
-  const memberships = items.filter(i => (!i.type || i.type === 'Membership') && i.state !== 'Canceled' && i.state !== 'Refunded' && i.state !== 'Refused');
-  let members = memberships.map(i => toMember(i, cfg));
+  const terms = String(cfg.campaigns || '').split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+  const alive = items.filter(i => i.state !== 'Canceled' && i.state !== 'Refunded' && i.state !== 'Refused' && i.type !== 'Donation');
+  // campagnes présentes sur HelloAsso (pour aider à les régler en cas de souci)
+  const forms = {};
+  for (const i of alive) { const l = campaignLabel(i) || '(sans nom)'; forms[l] = (forms[l] || 0) + 1; }
+  const kept = terms.length ? alive.filter(i => { const h = campaignHaystack(i); return terms.some(t => campaignMatches(h, t)); })
+                            : alive.filter(i => !i.type || i.type === 'Membership');
+  let members = kept.map(i => toMember(i, cfg)).filter(m => m.firstName || m.lastName);
   if (cfg.since) members = members.filter(m => m.date && m.date.slice(0, 10) >= cfg.since);
-  // dédoublonnage : une personne = son adhésion la plus récente
+  // doublons : une personne = une carte. Une adhésion AVEC photo l'emporte toujours sur une sans photo ;
+  // à photo égale, la plus récente gagne.
+  const better = (a, b) => (!!a.photo !== !!b.photo) ? !!a.photo : (a.date || '') > (b.date || '');
   const byKey = new Map();
   for (const m of members) {
-    const key = (m.firstName + '|' + m.lastName).toLowerCase();
-    const prev = byKey.get(key);
-    if (!prev || (m.date || '') > (prev.date || '')) byKey.set(key, { ...m, photo: m.photo || (prev && prev.photo) });
+    const prev = byKey.get(m.key);
+    if (!prev || better(m, prev)) byKey.set(m.key, m);
   }
-  return [...byKey.values()].sort((a, b) => a.lastName.localeCompare(b.lastName, 'fr') || a.firstName.localeCompare(b.firstName, 'fr'));
+  const list = [...byKey.values()].sort((a, b) => a.lastName.localeCompare(b.lastName, 'fr') || a.firstName.localeCompare(b.firstName, 'fr'));
+  return { members: list, forms, total: alive.length, matched: kept.length };
 }
 
 // ---------- Serveur HTTP ----------
@@ -151,6 +178,22 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/members') {
       return send(res, 200, await getMembers(loadConfig()));
+    }
+    if (url.pathname === '/api/ping') {  // la page signale qu'elle est ouverte ; sans signal, l'appli se ferme seule
+      lastPing = Date.now();
+      return send(res, 200, { ok: true });
+    }
+    if (url.pathname === '/api/hidden') {  // adhérents retirés du trombinoscope (local uniquement, rien n'est supprimé chez HelloAsso)
+      const f = path.join(DATA_DIR, 'hidden.json');
+      let h = {};
+      try { h = JSON.parse(fs.readFileSync(f, 'utf8')); } catch {}
+      if (req.method === 'POST') {
+        const { add = [], remove = [] } = JSON.parse(await readBody(req));
+        for (const m of add) h[m.key] = { firstName: m.firstName, lastName: m.lastName };
+        for (const k of remove) delete h[k];
+        fs.writeFileSync(f, JSON.stringify(h));
+      }
+      return send(res, 200, h);
     }
     if (url.pathname === '/api/quit') {  // permet à un nouveau lancement de remplacer l'ancien
       send(res, 200, { ok: true });
@@ -195,6 +238,10 @@ const server = http.createServer(async (req, res) => {
     send(res, 500, { error: e.message });
   }
 });
+
+// Ferme l'appli quand l'onglet est fermé (plus de signal depuis 3 minutes)
+let lastPing = 0;
+setInterval(() => { if (lastPing && Date.now() - lastPing > 180000) process.exit(0); }, 15000).unref();
 
 let retried = false;
 function start() {

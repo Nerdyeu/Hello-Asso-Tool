@@ -31,15 +31,17 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - name: Compiler et zipper (Apple Silicon et Intel)
+      - name: Fabriquer l'application Mac (Apple Silicon et Intel)
         run: |
           for arch in arm64 x64; do
             name=$([ "$arch" = "arm64" ] && echo "Mac-AppleSilicon" || echo "Mac-Intel")
-            mkdir -p "out/$name"
-            npx pkg . --targets "node22-macos-$arch" --output "out/$name/Trombinoscope"
-            cp mac/Lancer-Trombinoscope.command "out/$name/"
-            chmod +x "out/$name/Lancer-Trombinoscope.command" "out/$name/Trombinoscope"
-            (cd out && zip -r "../Trombinoscope-$name.zip" "$name")
+            app="out/$name/Trombinoscope.app"
+            mkdir -p "$app/Contents/MacOS"
+            npx pkg . --targets "node22-macos-$arch" --output "$app/Contents/MacOS/Trombinoscope"
+            cp mac/Info.plist "$app/Contents/Info.plist"
+            chmod +x "$app/Contents/MacOS/Trombinoscope"
+            codesign --force --deep --sign - "$app"
+            ditto -c -k --keepParent "$app" "Trombinoscope-$name.zip"
           done
       - uses: actions/upload-artifact@v4
         with:

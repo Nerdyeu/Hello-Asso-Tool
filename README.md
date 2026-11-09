@@ -14,16 +14,15 @@ Outil Windows pour générer le trombinoscope des adhérents d'une association �
 ### Sur Mac
 
 1. Dans les **[Releases](../../releases/latest)**, téléchargez `Trombinoscope-Mac-AppleSilicon.zip` (Mac M1 à M4) ou `Trombinoscope-Mac-Intel.zip` (Mac plus anciens). En cas de doute : menu  > *À propos de ce Mac*.
-2. Décompressez, puis double-cliquez sur `Lancer-Trombinoscope.command`.
-3. Au premier lancement, macOS peut refuser car l'application n'est pas signée : *clic droit > Ouvrir*, ou *Réglages Système > Confidentialité et sécurité > Ouvrir quand même*.
-4. Suite identique à Windows (Réglages, etc.). Les réglages sont dans `~/Library/Application Support/Trombinoscope-HelloAsso/`.
-
-Gardez la fenêtre Terminal ouverte pendant l'utilisation ; fermez-la pour quitter.
+2. Décompressez le zip (double-clic), puis **clic droit sur `Trombinoscope` > Ouvrir** et confirmez. Ce n'est nécessaire qu'au premier lancement, car l'application n'est pas signée par Apple. Sinon : *Réglages Système > Confidentialité et sécurité > Ouvrir quand même*.
+3. Le navigateur s'ouvre tout seul sur l'outil, sans Terminal. Utilisez le bouton **Quitter** de la page pour fermer l'outil (il se ferme aussi quelques minutes après la fermeture de l'onglet).
+4. Suite identique à Windows. Les réglages sont dans `~/Library/Application Support/Trombinoscope-HelloAsso/`.
 
 ## Utilisation
 
-- Cochez les adhérents à inclure (clic sur la carte). **Sélectionner les nouveaux** coche ceux jamais imprimés.
-- Cliquez sur **Trombinoscope (n)** pour imprimer ou exporter en PDF.
+- Seules les campagnes « Nouveaux adhérents : Adhésion 2027 », « Nouveaux adhérents : Adhésion 2026 » et « Anciens adhérents » sont prises en compte (modifiable dans **Réglages > Campagnes à inclure**). Les doublons sont fusionnés, et la fiche avec photo est toujours conservée.
+- Cochez les adhérents à inclure (clic sur la carte). Le bouton **Retirer** d'une carte la masque du trombinoscope (uniquement dans l'outil, rien n'est supprimé chez HelloAsso) ; **Retirés** permet de la remettre. **Sélectionner les nouveaux** coche ceux jamais imprimés.
+- Cliquez sur **Trombinoscope (n)** pour imprimer ou exporter en PDF : 20 adhérents maximum par page A4 (5 colonnes x 4 lignes).
 - Après l'impression, l'outil propose de marquer ces adhérents comme imprimés.
 
 Les réglages et la liste des « déjà imprimés » sont stockés dans `%APPDATA%\Trombinoscope-HelloAsso\` sur votre ordinateur. Rien n'est envoyé ailleurs qu'à HelloAsso.
