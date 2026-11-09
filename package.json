@@ -1,0 +1,17 @@
+{
+  "name": "trombinoscope-helloasso",
+  "version": "1.0.0",
+  "description": "Trombinoscope des adhérents depuis l'API HelloAsso",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "pkg . --targets node22-win-x64 --output dist/Trombinoscope.exe"
+  },
+  "pkg": {
+    "assets": ["public/**/*"]
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.0.0"
+  }
+}

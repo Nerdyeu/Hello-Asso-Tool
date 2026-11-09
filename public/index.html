@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trombinoscope</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#6b7280; --accent:#2f6fed; --line:#e3e6ec; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171d; --card:#1e232c; --ink:#e8ebf1; --muted:#9aa3b2; --line:#2b3240; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:1.15rem; margin:0 auto 0 0; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  button:hover { filter:brightness(.95); }
+  main { padding:20px; max-width:1100px; margin:auto; }
+  #msg { color:var(--muted); margin:8px 0 16px; }
+  #msg.err { color:#c0392b; }
+  .options { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-bottom:12px; color:var(--muted); font-size:.9rem; }
+  .options input[type=text], .options select { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink); }
+  .grid { display:grid; grid-template-columns:repeat(var(--cols,4), 1fr); gap:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; text-align:center; break-inside:avoid; page-break-inside:avoid; }
+  .photo { width:100%; aspect-ratio:3/4; object-fit:cover; border-radius:6px; background:var(--line); display:block; }
+  .noimg { display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:2rem; }
+  .card { cursor:pointer; position:relative; opacity:.55; }
+  .card.sel { opacity:1; outline:3px solid var(--accent); }
+  .card input { position:absolute; top:14px; left:14px; width:20px; height:20px; }
+  .badge { position:absolute; top:14px; right:14px; background:#16a34a; color:#fff; font-size:.7rem; padding:2px 6px; border-radius:10px; }
+  .nom { font-weight:700; margin-top:8px; }
+  .prenom { }
+  .date { color:var(--muted); font-size:.8rem; margin-top:2px; }
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--ink); max-width:480px; width:92%; }
+  dialog label { display:block; margin:10px 0 2px; font-size:.85rem; color:var(--muted); }
+  dialog input { width:100%; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
+  dialog .row { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  small { color:var(--muted); }
+  #printTitle { display:none; text-align:center; margin:0 0 10px; }
+
+  @media print {
+    @page { size: A4; margin: 10mm; }
+    body { background:#fff; color:#000; }
+    header, #msg, .options, dialog { display:none !important; }
+    main { padding:0; max-width:none; }
+    #printTitle { display:block; }
+    .card:not(.sel) { display:none !important; }
+    .card input, .badge { display:none !important; }
+    .card { opacity:1; outline:none !important; border:1px solid #bbb; background:#fff; color:#000; padding:4px; }
+    .date { color:#444; }
+    .grid { gap:6px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Trombinoscope de l'association</h1>
+  <button id="btnReload">Actualiser</button>
+  <button id="btnSettings">Réglages</button>
+  <button id="btnPrint" class="primary" disabled>Trombinoscope (0)</button>
+</header>
+<main>
+  <div id="msg">Chargement…</div>
+  <div class="options">
+    <label>Titre <input type="text" id="title" value="Trombinoscope"></label>
+    <label>Colonnes
+      <select id="cols"><option>3</option><option>4</option><option selected>5</option><option>6</option></select>
+    </label>
+    <label><input type="checkbox" id="showDate" checked> Afficher la date d'adhésion</label>
+    <label>Filtre <input type="text" id="filter" placeholder="nom…"></label>
+  </div>
+  <div class="options">
+    <button id="btnNew">Sélectionner les nouveaux</button>
+    <button id="btnAll">Tout sélectionner</button>
+    <button id="btnNone">Tout désélectionner</button>
+  </div>
+  <h2 id="printTitle"></h2>
+  <div class="grid" id="grid"></div>
+</main>
+
+<dialog id="dlg">
+  <h3 style="margin-top:0">Réglages HelloAsso</h3>
+  <label>Client ID</label><input id="cClientId">
+  <label>Client Secret</label><input id="cClientSecret" type="password">
+  <label>Slug de l'organisation <small>(dans l'URL de votre page HelloAsso)</small></label><input id="cOrg">
+  <label>Type de formulaire <small>(optionnel, ex : Membership)</small></label><input id="cFormType">
+  <label>Slug du formulaire <small>(optionnel, ex : adhesion-2025-2026)</small></label><input id="cFormSlug">
+  <label>Nom du champ photo <small>(optionnel, détection auto sinon)</small></label><input id="cPhoto">
+  <label>Adhésions depuis le <small>(optionnel)</small></label><input id="cSince" type="date">
+  <div class="row">
+    <button id="btnDebug">Diagnostic</button>
+    <button id="btnCancel">Annuler</button>
+    <button id="btnSave" class="primary">Enregistrer</button>
+  </div>
+  <pre id="debugOut" style="max-height:200px;overflow:auto;font-size:.75rem;display:none"></pre>
+</dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+let members = [];
+const selected = new Set(), printed = new Set();
+const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function render() {
+  const f = $('filter').value.trim().toLowerCase();
+  const list = members.filter(m => !f || (m.firstName + ' ' + m.lastName).toLowerCase().includes(f));
+  $('grid').style.setProperty('--cols', $('cols').value);
+  $('printTitle').textContent = $('title').value;
+  $('grid').innerHTML = list.map(m => `
+    <div class="card${selected.has(m.id) ? ' sel' : ''}" data-id="${m.id}">
+      <input type="checkbox" ${selected.has(m.id) ? 'checked' : ''}>
+      ${printed.has(m.id) ? '<span class="badge">déjà imprimé</span>' : ''}
+      ${m.photo ? `<img class="photo" loading="lazy" src="/api/photo?u=${encodeURIComponent(m.photo)}" alt="">`
+                : `<div class="photo noimg">?</div>`}
+      <div class="nom">${esc(m.lastName.toUpperCase())}</div>
+      <div class="prenom">${esc(m.firstName)}</div>
+      ${$('showDate').checked ? `<div class="date">Adhérent depuis le ${fmtDate(m.date)}</div>` : ''}
+    </div>`).join('');
+  $('btnPrint').textContent = `Trombinoscope (${selected.size})`;
+  $('btnPrint').disabled = selected.size === 0;
+}
+const toggle = id => { selected.has(id) ? selected.delete(id) : selected.add(id); render(); };
+$('grid').addEventListener('click', e => {
+  const c = e.target.closest('.card'); if (c) toggle(Number(c.dataset.id));
+});
+$('btnAll').onclick = () => { members.forEach(m => selected.add(m.id)); render(); };
+$('btnNone').onclick = () => { selected.clear(); render(); };
+$('btnNew').onclick = () => { selected.clear(); members.filter(m => !printed.has(m.id)).forEach(m => selected.add(m.id)); render(); };
+window.addEventListener('afterprint', async () => {
+  if (!selected.size) return;
+  if (confirm(`Marquer ces ${selected.size} adhérent(s) comme imprimés ?\n(« Sélectionner les nouveaux » ne les proposera plus.)`)) {
+    const ids = [...selected];
+    await fetch('/api/printed', { method: 'POST', body: JSON.stringify(ids) });
+    ids.forEach(i => printed.add(i)); render();
+  }
+});
+
+async function load() {
+  $('msg').className = ''; $('msg').textContent = 'Chargement des adhérents…';
+  try {
+    const r = await fetch('/api/members'); const j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    members = j;
+    (await (await fetch('/api/printed')).json()).forEach(i => printed.add(i));
+    const sans = members.filter(m => !m.photo).length;
+    $('msg').textContent = `${members.length} adhérent(s)` + (sans ? ` — ${sans} sans photo (voir Réglages > Diagnostic)` : '');
+    render();
+  } catch (e) {
+    $('msg').className = 'err'; $('msg').textContent = e.message;
+    if (/Réglages/.test(e.message)) openSettings();
+  }
+}
+
+async function openSettings() {
+  const c = await (await fetch('/api/config')).json();
+  $('cClientId').value = c.clientId; $('cClientSecret').value = c.clientSecret;
+  $('cOrg').value = c.organizationSlug; $('cFormType').value = c.formType; $('cFormSlug').value = c.formSlug;
+  $('cPhoto').value = c.photoField; $('cSince').value = c.since;
+  $('debugOut').style.display = 'none';
+  $('dlg').showModal();
+}
+async function saveSettings() {
+  await fetch('/api/config', { method: 'POST', body: JSON.stringify({
+    clientId: $('cClientId').value.trim(), clientSecret: $('cClientSecret').value.trim(),
+    organizationSlug: $('cOrg').value.trim(), formType: $('cFormType').value.trim(),
+    formSlug: $('cFormSlug').value.trim(), photoField: $('cPhoto').value.trim(), since: $('cSince').value }) });
+}
+
+$('btnSave').onclick = async () => { await saveSettings(); $('dlg').close(); load(); };
+$('btnCancel').onclick = () => $('dlg').close();
+$('btnDebug').onclick = async () => {
+  await saveSettings();
+  const o = $('debugOut'); o.style.display = 'block'; o.textContent = '…';
+  const r = await fetch('/api/debug'); const j = await r.json();
+  o.textContent = r.ok ? JSON.stringify(j, null, 2) : j.error;
+};
+$('btnSettings').onclick = openSettings;
+$('btnReload').onclick = load;
+$('btnPrint').onclick = () => { render(); window.print(); };
+['title','cols','showDate','filter'].forEach(id => $(id).addEventListener('input', render));
+load();
+</script>
+</body>
+</html>
