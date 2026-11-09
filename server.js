@@ -30,7 +30,6 @@ const DEFAULT_CONFIG = {
   photoField: '',    // nom du champ personnalisé contenant la photo (vide = détection auto)
   since: '',         // date AAAA-MM-JJ : ne garder que les adhésions depuis cette date
   amounts: '100, 110, 160, 170',   // montants payés (en €) à retenir ; vide = tous les montants
-  campaigns: 'Nouveaux adhérents : Adhésion 2027, Nouveaux adhérents : Adhésion 2026, Anciens adhérents'  // campagnes à inclure, séparées par des virgules
 };
 
 function loadConfig() {
@@ -98,23 +97,13 @@ function findPhoto(item, photoField) {
   return f ? f.answer.trim() : null;
 }
 
-// minuscules, sans accents, tirets/espaces normalisés : sert aux comparaisons de noms et de campagnes
+// minuscules, sans accents, tirets/espaces normalisés : sert à repérer les doublons de noms
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-// mots d'un texte, sans « s » final : « Anciens adhérents » ≈ « ancien adhérent »
-const tokens = s => norm(s).split(' ').filter(Boolean).map(w => w.length > 3 ? w.replace(/s$/, '') : w);
-// vrai si tous les mots de la campagne recherchée sont dans le nom du formulaire
-const campaignMatches = (haystack, term) => { const h = new Set(tokens(haystack)); const t = tokens(term); return t.length > 0 && t.every(w => h.has(w)); };
 
 function campaignLabel(item) {
   const o = item.order || {};
   return o.formName || item.formName || o.formSlug || item.formSlug || item.name || '';
 }
-// texte sur lequel on compare les campagnes : nom + slug du formulaire + nom de l'article
-function campaignHaystack(item) {
-  const o = item.order || {};
-  return [o.formName, item.formName, o.formSlug, item.formSlug, item.name].filter(Boolean).join(' ');
-}
-
 function toMember(item, cfg) {
   const u = item.user || {}, pay = item.payer || {};
   const first = (u.firstName || pay.firstName || '').trim();
@@ -132,13 +121,12 @@ function toMember(item, cfg) {
 
 async function getMembers(cfg) {
   const items = await fetchItems(cfg);
-  const terms = String(cfg.campaigns || '').split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
   const alive = items.filter(i => i.state !== 'Canceled' && i.state !== 'Refunded' && i.state !== 'Refused' && i.type !== 'Donation');
-  // campagnes présentes sur HelloAsso (pour aider à les régler en cas de souci)
+  // formulaires présents sur HelloAsso (pour aider au diagnostic)
   const forms = {};
   for (const i of alive) { const l = campaignLabel(i) || '(sans nom)'; forms[l] = (forms[l] || 0) + 1; }
-  const kept = terms.length ? alive.filter(i => { const h = campaignHaystack(i); return terms.some(t => campaignMatches(h, t)); })
-                            : alive.filter(i => !i.type || i.type === 'Membership');
+  // on ne garde que les adhésions (pas les dons ni les autres types d'articles)
+  const kept = alive.filter(i => !i.type || i.type === 'Membership');
   // montant payé (HelloAsso donne les montants en centimes) : on ne garde que les montants demandés
   const wanted = String(cfg.amounts || '').split(/[;,\s]+/).map(Number).filter(n => n > 0);
   const euros = i => typeof i.amount === 'number' ? i.amount / 100 : null;
