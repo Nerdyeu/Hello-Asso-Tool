@@ -6,7 +6,10 @@ const { exec } = require('child_process');
 
 const IS_PKG = typeof process.pkg !== 'undefined';
 const APP_DIR = IS_PKG ? path.dirname(process.execPath) : __dirname;
-const CONFIG_PATH = path.join(APP_DIR, 'config.json');
+// Les réglages sont stockés dans %APPDATA% : conservés même si l'exe est remplacé ou déplacé
+const DATA_DIR = path.join(process.env.APPDATA || APP_DIR, 'Trombinoscope-HelloAsso');
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {}
+const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const PORT = 3737;
 const API = 'https://api.helloasso.com';
 
@@ -141,8 +144,17 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/members') {
       return send(res, 200, await getMembers(loadConfig()));
     }
+    if (url.pathname === '/api/quit') {  // permet à un nouveau lancement de remplacer l'ancien
+      send(res, 200, { ok: true });
+      return setTimeout(() => process.exit(0), 200);
+    }
+    if (url.pathname === '/api/test') {  // vérifie identifiants + slug
+      const cfg = loadConfig();
+      const o = await apiGet(cfg, `${API}/v5/organizations/${encodeURIComponent(cfg.organizationSlug)}`);
+      return send(res, 200, { ok: true, name: o.name || cfg.organizationSlug });
+    }
     if (url.pathname === '/api/printed') {  // mémoire des adhérents déjà imprimés
-      const f = path.join(APP_DIR, 'printed.json');
+      const f = path.join(DATA_DIR, 'printed.json');
       const read = () => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return []; } };
       if (req.method === 'POST') {
         const ids = JSON.parse(await readBody(req));
@@ -176,11 +188,18 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.on('error', e => {
-  if (e.code === 'EADDRINUSE') { exec(`start http://localhost:${PORT}`); process.exit(0); }
-  else throw e;
+let retried = false;
+function start() {
+  server.listen(PORT, '127.0.0.1', () => {
+    console.log(`Trombinoscope prêt : http://localhost:${PORT}  (fermez cette fenêtre pour quitter)`);
+    exec(`start http://localhost:${PORT}`);
+  });
+}
+server.on('error', async e => {
+  if (e.code !== 'EADDRINUSE') throw e;
+  if (retried) { exec(`start http://localhost:${PORT}`); return process.exit(0); }
+  retried = true;  // une ancienne instance tourne : on la ferme puis on prend sa place
+  try { await fetch(`http://127.0.0.1:${PORT}/api/quit`); } catch {}
+  setTimeout(start, 800);
 });
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Trombinoscope prêt : http://localhost:${PORT}  (fermez cette fenêtre pour quitter)`);
-  exec(`start http://localhost:${PORT}`);
-});
+start();

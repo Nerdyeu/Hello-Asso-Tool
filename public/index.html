@@ -30,17 +30,20 @@
   .nom { font-weight:700; margin-top:8px; }
   .prenom { }
   .date { color:var(--muted); font-size:.8rem; margin-top:2px; }
-  dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--ink); max-width:480px; width:92%; }
-  dialog label { display:block; margin:10px 0 2px; font-size:.85rem; color:var(--muted); }
-  dialog input { width:100%; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
-  dialog .row { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  #dlg { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--ink); max-width:520px; padding:8px 20px 16px; margin:0 0 20px; }
+  #dlg[hidden] { display:none; }
+  #dlg label { display:block; margin:10px 0 2px; font-size:.85rem; color:var(--muted); }
+  #dlg input { width:100%; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
+  #dlg .row { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
+  #status { margin-top:10px; font-size:.9rem; }
+  #status.err { color:#c0392b; } #status.ok { color:#16a34a; }
   small { color:var(--muted); }
   #printTitle { display:none; text-align:center; margin:0 0 10px; }
 
   @media print {
     @page { size: A4; margin: 10mm; }
     body { background:#fff; color:#000; }
-    header, #msg, .options, dialog { display:none !important; }
+    header, #msg, .options, #dlg { display:none !important; }
     main { padding:0; max-width:none; }
     #printTitle { display:block; }
     .card:not(.sel) { display:none !important; }
@@ -59,6 +62,25 @@
   <button id="btnPrint" class="primary" disabled>Trombinoscope (0)</button>
 </header>
 <main>
+  <section id="dlg" hidden>
+    <h3>Réglages HelloAsso</h3>
+    <small>Saisis une seule fois : ils sont mémorisés sur cet ordinateur.</small>
+    <label>Client ID</label><input id="cClientId" autocomplete="off">
+    <label>Client Secret</label><input id="cClientSecret" type="password" autocomplete="off">
+    <label>Slug de l'organisation <small>(dans l'URL de votre page HelloAsso)</small></label><input id="cOrg">
+    <label>Type de formulaire <small>(optionnel, ex : Membership)</small></label><input id="cFormType">
+    <label>Slug du formulaire <small>(optionnel, ex : adhesion-2025-2026)</small></label><input id="cFormSlug">
+    <label>Nom du champ photo <small>(optionnel, détection auto sinon)</small></label><input id="cPhoto">
+    <label>Adhésions depuis le <small>(optionnel)</small></label><input id="cSince" type="date">
+    <div id="status"></div>
+    <div class="row">
+      <button id="btnDebug">Diagnostic</button>
+      <button id="btnTest">Tester la connexion</button>
+      <button id="btnCancel">Fermer</button>
+      <button id="btnSave" class="primary">Enregistrer</button>
+    </div>
+    <pre id="debugOut" style="max-height:200px;overflow:auto;font-size:.75rem;display:none"></pre>
+  </section>
   <div id="msg">Chargement…</div>
   <div class="options">
     <label>Titre <input type="text" id="title" value="Trombinoscope"></label>
@@ -77,22 +99,6 @@
   <div class="grid" id="grid"></div>
 </main>
 
-<dialog id="dlg">
-  <h3 style="margin-top:0">Réglages HelloAsso</h3>
-  <label>Client ID</label><input id="cClientId">
-  <label>Client Secret</label><input id="cClientSecret" type="password">
-  <label>Slug de l'organisation <small>(dans l'URL de votre page HelloAsso)</small></label><input id="cOrg">
-  <label>Type de formulaire <small>(optionnel, ex : Membership)</small></label><input id="cFormType">
-  <label>Slug du formulaire <small>(optionnel, ex : adhesion-2025-2026)</small></label><input id="cFormSlug">
-  <label>Nom du champ photo <small>(optionnel, détection auto sinon)</small></label><input id="cPhoto">
-  <label>Adhésions depuis le <small>(optionnel)</small></label><input id="cSince" type="date">
-  <div class="row">
-    <button id="btnDebug">Diagnostic</button>
-    <button id="btnCancel">Annuler</button>
-    <button id="btnSave" class="primary">Enregistrer</button>
-  </div>
-  <pre id="debugOut" style="max-height:200px;overflow:auto;font-size:.75rem;display:none"></pre>
-</dialog>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -157,24 +163,41 @@ async function openSettings() {
   $('cOrg').value = c.organizationSlug; $('cFormType').value = c.formType; $('cFormSlug').value = c.formSlug;
   $('cPhoto').value = c.photoField; $('cSince').value = c.since;
   $('debugOut').style.display = 'none';
-  $('dlg').showModal();
+  setStatus('');
+  $('dlg').hidden = false;
+  $('dlg').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+function setStatus(t, cls = '') { $('status').textContent = t; $('status').className = cls; }
 async function saveSettings() {
-  await fetch('/api/config', { method: 'POST', body: JSON.stringify({
+  const r = await fetch('/api/config', { method: 'POST', body: JSON.stringify({
     clientId: $('cClientId').value.trim(), clientSecret: $('cClientSecret').value.trim(),
     organizationSlug: $('cOrg').value.trim(), formType: $('cFormType').value.trim(),
     formSlug: $('cFormSlug').value.trim(), photoField: $('cPhoto').value.trim(), since: $('cSince').value }) });
+  if (!r.ok) throw new Error((await r.json()).error || 'Enregistrement impossible');
 }
 
-$('btnSave').onclick = async () => { await saveSettings(); $('dlg').close(); load(); };
-$('btnCancel').onclick = () => $('dlg').close();
-$('btnDebug').onclick = async () => {
-  await saveSettings();
-  const o = $('debugOut'); o.style.display = 'block'; o.textContent = '…';
-  const r = await fetch('/api/debug'); const j = await r.json();
-  o.textContent = r.ok ? JSON.stringify(j, null, 2) : j.error;
+$('btnSave').onclick = async () => {
+  try { await saveSettings(); setStatus('Enregistré.', 'ok'); $('dlg').hidden = true; load(); }
+  catch (e) { setStatus(e.message, 'err'); }
 };
-$('btnSettings').onclick = openSettings;
+$('btnCancel').onclick = () => { $('dlg').hidden = true; };
+$('btnTest').onclick = async () => {
+  try {
+    await saveSettings(); setStatus('Test en cours…');
+    const r = await fetch('/api/test'); const j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    setStatus('Connexion réussie : ' + j.name, 'ok');
+  } catch (e) { setStatus(e.message, 'err'); }
+};
+$('btnDebug').onclick = async () => {
+  try {
+    await saveSettings();
+    const o = $('debugOut'); o.style.display = 'block'; o.textContent = '…';
+    const r = await fetch('/api/debug'); const j = await r.json();
+    o.textContent = r.ok ? JSON.stringify(j, null, 2) : j.error;
+  } catch (e) { setStatus(e.message, 'err'); }
+};
+$('btnSettings').onclick = () => { $('dlg').hidden ? openSettings() : ($('dlg').hidden = true); };
 $('btnReload').onclick = load;
 $('btnPrint').onclick = () => { render(); window.print(); };
 ['title','cols','showDate','filter'].forEach(id => $(id).addEventListener('input', render));
