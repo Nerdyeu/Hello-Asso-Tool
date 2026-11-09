@@ -29,6 +29,7 @@ const DEFAULT_CONFIG = {
   formSlug: '',      // ex: adhesion-2025-2026 (vide = tous)
   photoField: '',    // nom du champ personnalisé contenant la photo (vide = détection auto)
   since: '',         // date AAAA-MM-JJ : ne garder que les adhésions depuis cette date
+  amounts: '100, 110, 160, 170',   // montants payés (en €) à retenir ; vide = tous les montants
   campaigns: 'Nouveaux adhérents : Adhésion 2027, Nouveaux adhérents : Adhésion 2026, Anciens adhérents'  // campagnes à inclure, séparées par des virgules
 };
 
@@ -138,7 +139,13 @@ async function getMembers(cfg) {
   for (const i of alive) { const l = campaignLabel(i) || '(sans nom)'; forms[l] = (forms[l] || 0) + 1; }
   const kept = terms.length ? alive.filter(i => { const h = campaignHaystack(i); return terms.some(t => campaignMatches(h, t)); })
                             : alive.filter(i => !i.type || i.type === 'Membership');
-  let members = kept.map(i => toMember(i, cfg)).filter(m => m.firstName || m.lastName);
+  // montant payé (HelloAsso donne les montants en centimes) : on ne garde que les montants demandés
+  const wanted = String(cfg.amounts || '').split(/[;,\s]+/).map(Number).filter(n => n > 0);
+  const euros = i => typeof i.amount === 'number' ? i.amount / 100 : null;
+  const amounts = {};   // répartition des montants vus (pour aider à régler le filtre)
+  for (const i of kept) { const e = euros(i); const k = e === null ? '(inconnu)' : e + ' €'; amounts[k] = (amounts[k] || 0) + 1; }
+  const priced = wanted.length ? kept.filter(i => { const e = euros(i); return e !== null && wanted.some(w => Math.abs(w - e) < 0.005); }) : kept;
+  let members = priced.map(i => toMember(i, cfg)).filter(m => m.firstName || m.lastName);
   if (cfg.since) members = members.filter(m => m.date && m.date.slice(0, 10) >= cfg.since);
   // doublons : une personne = une carte. Une adhésion AVEC photo l'emporte toujours sur une sans photo ;
   // à photo égale, la plus récente gagne.
@@ -149,7 +156,7 @@ async function getMembers(cfg) {
     if (!prev || better(m, prev)) byKey.set(m.key, m);
   }
   const list = [...byKey.values()].sort((a, b) => a.lastName.localeCompare(b.lastName, 'fr') || a.firstName.localeCompare(b.firstName, 'fr'));
-  return { members: list, forms, total: alive.length, matched: kept.length };
+  return { members: list, forms, amounts, total: alive.length, matched: kept.length, priced: priced.length };
 }
 
 // ---------- Serveur HTTP ----------

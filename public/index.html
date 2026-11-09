@@ -82,6 +82,7 @@
       <label>Client Secret</label><input id="cClientSecret" type="password" autocomplete="off">
       <label>Slug de l'organisation <small>(dans l'URL de votre page HelloAsso)</small></label><input id="cOrg">
       <label>Campagnes à inclure <small>(mots du nom du formulaire, séparés par des virgules)</small></label><input id="cCampaigns">
+      <label>Montants payés à retenir <small>(en €, séparés par des virgules ; vide = tous)</small></label><input id="cAmounts">
       <label>Type de formulaire <small>(optionnel, ex : Membership)</small></label><input id="cFormType">
       <label>Slug du formulaire <small>(optionnel)</small></label><input id="cFormSlug">
       <label>Nom du champ photo <small>(optionnel, détection auto sinon)</small></label><input id="cPhoto">
@@ -183,7 +184,11 @@ async function load() {
     let t = `${v.length} adhérent(s)` + (sans ? ` — ${sans} sans photo` : '');
     if (!v.length) {
       const names = Object.entries(j.forms).map(([n, c]) => `${n} (${c})`).join(' ; ') || 'aucune';
-      t = `Aucun adhérent trouvé (${j.matched} correspondant aux campagnes sur ${j.total}). Campagnes présentes sur HelloAsso : ${names}. Vérifiez « Campagnes à inclure » dans Réglages.`;
+      const amts = Object.entries(j.amounts).map(([n, c]) => `${n} (${c})`).join(' ; ') || 'aucun';
+      t = `Aucun adhérent trouvé : ${j.matched} article(s) dans les campagnes sur ${j.total}, ${j.priced} avec les bons montants. ` +
+          `Campagnes sur HelloAsso : ${names}. Montants dans les campagnes retenues : ${amts}. Vérifiez « Campagnes » et « Montants » dans Réglages.`;
+    } else if (j.priced < j.matched) {
+      t += ` — ${j.matched - j.priced} article(s) écarté(s) car le montant payé n'est pas dans la liste`;
     }
     $('msg').textContent = t;
     render();
@@ -231,7 +236,7 @@ window.addEventListener('afterprint', async () => {
 async function openSettings() {
   const c = await (await fetch('/api/config')).json();
   $('cClientId').value = c.clientId; $('cClientSecret').value = c.clientSecret;
-  $('cOrg').value = c.organizationSlug; $('cCampaigns').value = c.campaigns;
+  $('cOrg').value = c.organizationSlug; $('cCampaigns').value = c.campaigns; $('cAmounts').value = c.amounts;
   $('cFormType').value = c.formType; $('cFormSlug').value = c.formSlug;
   $('cPhoto').value = c.photoField; $('cSince').value = c.since;
   $('debugOut').style.display = 'none';
@@ -243,7 +248,7 @@ function setStatus(t, cls = '') { $('status').textContent = t; $('status').class
 async function saveSettings() {
   const r = await fetch('/api/config', { method: 'POST', body: JSON.stringify({
     clientId: $('cClientId').value.trim(), clientSecret: $('cClientSecret').value.trim(),
-    organizationSlug: $('cOrg').value.trim(), campaigns: $('cCampaigns').value.trim(),
+    organizationSlug: $('cOrg').value.trim(), campaigns: $('cCampaigns').value.trim(), amounts: $('cAmounts').value.trim(),
     formType: $('cFormType').value.trim(), formSlug: $('cFormSlug').value.trim(),
     photoField: $('cPhoto').value.trim(), since: $('cSince').value }) });
   if (!r.ok) throw new Error((await r.json()).error || 'Enregistrement impossible');
