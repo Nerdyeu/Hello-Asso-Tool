@@ -7,7 +7,15 @@ const { exec } = require('child_process');
 const IS_PKG = typeof process.pkg !== 'undefined';
 const APP_DIR = IS_PKG ? path.dirname(process.execPath) : __dirname;
 // Les réglages sont stockés dans %APPDATA% : conservés même si l'exe est remplacé ou déplacé
-const DATA_DIR = path.join(process.env.APPDATA || APP_DIR, 'Trombinoscope-HelloAsso');
+const os = require('os');
+const DATA_ROOT = process.platform === 'win32' ? (process.env.APPDATA || APP_DIR)
+  : process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support')
+  : (process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'));
+const DATA_DIR = path.join(DATA_ROOT, 'Trombinoscope-HelloAsso');
+function openBrowser(url) {
+  const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
+  exec(cmd);
+}
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {}
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const PORT = 3737;
@@ -192,12 +200,12 @@ let retried = false;
 function start() {
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`Trombinoscope prêt : http://localhost:${PORT}  (fermez cette fenêtre pour quitter)`);
-    exec(`start http://localhost:${PORT}`);
+    openBrowser(`http://localhost:${PORT}`);
   });
 }
 server.on('error', async e => {
   if (e.code !== 'EADDRINUSE') throw e;
-  if (retried) { exec(`start http://localhost:${PORT}`); return process.exit(0); }
+  if (retried) { openBrowser(`http://localhost:${PORT}`); return process.exit(0); }
   retried = true;  // une ancienne instance tourne : on la ferme puis on prend sa place
   try { await fetch(`http://127.0.0.1:${PORT}/api/quit`); } catch {}
   setTimeout(start, 800);

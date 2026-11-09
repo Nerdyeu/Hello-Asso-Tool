@@ -11,6 +11,15 @@ Outil Windows pour générer le trombinoscope des adhérents d'une association �
    - le **slug de l'organisation** (dans l'URL de votre page HelloAsso).
 4. Cliquez sur **Tester la connexion**, puis **Enregistrer**. Vous n'aurez plus à le refaire.
 
+### Sur Mac
+
+1. Dans les **[Releases](../../releases/latest)**, téléchargez `Trombinoscope-Mac-AppleSilicon.zip` (Mac M1 à M4) ou `Trombinoscope-Mac-Intel.zip` (Mac plus anciens). En cas de doute : menu  > *À propos de ce Mac*.
+2. Décompressez, puis double-cliquez sur `Lancer-Trombinoscope.command`.
+3. Au premier lancement, macOS peut refuser car l'application n'est pas signée : *clic droit > Ouvrir*, ou *Réglages Système > Confidentialité et sécurité > Ouvrir quand même*.
+4. Suite identique à Windows (Réglages, etc.). Les réglages sont dans `~/Library/Application Support/Trombinoscope-HelloAsso/`.
+
+Gardez la fenêtre Terminal ouverte pendant l'utilisation ; fermez-la pour quitter.
+
 ## Utilisation
 
 - Cochez les adhérents à inclure (clic sur la carte). **Sélectionner les nouveaux** coche ceux jamais imprimés.
@@ -27,4 +36,4 @@ npm start          # lance le serveur local (http://localhost:3737)
 npm run build      # produit dist/Trombinoscope.exe
 ```
 
-Publier une nouvelle version : `git tag v1.0.1 && git push origin v1.0.1`. GitHub Actions compile l'exe et l'attache à la Release.
+Publier une nouvelle version : `git tag v1.0.1 && git push origin v1.0.1`. GitHub Actions compile les versions Windows et Mac et les attache à la Release.

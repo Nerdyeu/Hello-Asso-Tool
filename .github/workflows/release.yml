@@ -1,4 +1,4 @@
-name: Publier l'exe
+name: Publier les applications
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,9 +17,47 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npm run build
-      - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      - run: npx pkg . --targets node22-win-x64 --output dist/Trombinoscope.exe
+      - uses: actions/upload-artifact@v4
         with:
-          files: dist/Trombinoscope.exe
+          name: windows
+          path: dist/Trombinoscope.exe
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Compiler et zipper (Apple Silicon et Intel)
+        run: |
+          for arch in arm64 x64; do
+            name=$([ "$arch" = "arm64" ] && echo "Mac-AppleSilicon" || echo "Mac-Intel")
+            mkdir -p "out/$name"
+            npx pkg . --targets "node22-macos-$arch" --output "out/$name/Trombinoscope"
+            cp mac/Lancer-Trombinoscope.command "out/$name/"
+            chmod +x "out/$name/Lancer-Trombinoscope.command" "out/$name/Trombinoscope"
+            (cd out && zip -r "../Trombinoscope-$name.zip" "$name")
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: Trombinoscope-Mac-*.zip
+
+  release:
+    needs: [windows, mac]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/Trombinoscope.exe
+            artifacts/Trombinoscope-Mac-*.zip
           generate_release_notes: true
