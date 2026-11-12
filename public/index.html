@@ -126,6 +126,8 @@
 <script>
 const $ = id => document.getElementById(id);
 const PER_PAGE = 20;
+// appels au programme local : l'en-tête X-Trombi prouve qu'ils viennent bien de cette page (pas d'un autre site)
+const api = (url, opts = {}) => fetch(url, { ...opts, headers: { 'X-Trombi': '1', 'Content-Type': 'application/json', ...(opts.headers || {}) } });
 let members = [], hidden = {};
 const selected = new Set(), printed = new Set();
 const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
@@ -177,11 +179,11 @@ function buildPrint() {
 async function load() {
   $('msg').className = ''; $('msg').textContent = 'Chargement des adhérents…';
   try {
-    const r = await fetch('/api/members'); const j = await r.json();
+    const r = await api('/api/members'); const j = await r.json();
     if (!r.ok) throw new Error(j.error);
     members = j.members;
-    printed.clear(); (await (await fetch('/api/printed')).json()).forEach(k => printed.add(k));
-    hidden = await (await fetch('/api/hidden')).json();
+    printed.clear(); (await (await api('/api/printed')).json()).forEach(k => printed.add(k));
+    hidden = await (await api('/api/hidden')).json();
     const v = visible(), sans = v.filter(m => !m.photo).length;
     let t = `${v.length} adhérent(s)` + (sans ? ` — ${sans} sans photo` : '');
     if (!v.length) {
@@ -207,14 +209,14 @@ $('grid').addEventListener('click', async e => {
   if (e.target.closest('.del')) {
     const m = members.find(x => x.key === key);
     if (!confirm(`Retirer ${m.firstName} ${m.lastName} du trombinoscope ?\n\n(Ne supprime rien chez HelloAsso. Vous pourrez le remettre via « Retirés ».)`)) return;
-    hidden = await (await fetch('/api/hidden', { method: 'POST', body: JSON.stringify({ add: [m] }) })).json();
+    hidden = await (await api('/api/hidden', { method: 'POST', body: JSON.stringify({ add: [m] }) })).json();
     selected.delete(key); render(); return;
   }
   selected.has(key) ? selected.delete(key) : selected.add(key); render();
 });
 $('hiddenList').addEventListener('click', async e => {
   const k = e.target.dataset.restore; if (!k) return;
-  hidden = await (await fetch('/api/hidden', { method: 'POST', body: JSON.stringify({ remove: [k] }) })).json();
+  hidden = await (await api('/api/hidden', { method: 'POST', body: JSON.stringify({ remove: [k] }) })).json();
   render();
 });
 $('btnHidden').onclick = () => { $('hiddenPanel').hidden = !$('hiddenPanel').hidden; };
@@ -229,14 +231,14 @@ window.addEventListener('afterprint', async () => {
   const keys = visible().filter(m => selected.has(m.key)).map(m => m.key);
   if (!keys.length) return;
   if (confirm(`Marquer ces ${keys.length} adhérent(s) comme imprimés ?\n(« Sélectionner les nouveaux » ne les proposera plus.)`)) {
-    await fetch('/api/printed', { method: 'POST', body: JSON.stringify(keys) });
+    await api('/api/printed', { method: 'POST', body: JSON.stringify(keys) });
     keys.forEach(k => printed.add(k)); render();
   }
 });
 
 // ----- réglages -----
 async function openSettings() {
-  const c = await (await fetch('/api/config')).json();
+  const c = await (await api('/api/config')).json();
   $('cClientId').value = c.clientId; $('cClientSecret').value = c.clientSecret;
   $('cOrg').value = c.organizationSlug; $('cAmounts').value = c.amounts;
   $('cFormType').value = c.formType; $('cFormSlug').value = c.formSlug;
@@ -248,7 +250,7 @@ async function openSettings() {
 }
 function setStatus(t, cls = '') { $('status').textContent = t; $('status').className = cls; }
 async function saveSettings() {
-  const r = await fetch('/api/config', { method: 'POST', body: JSON.stringify({
+  const r = await api('/api/config', { method: 'POST', body: JSON.stringify({
     clientId: $('cClientId').value.trim(), clientSecret: $('cClientSecret').value.trim(),
     organizationSlug: $('cOrg').value.trim(), amounts: $('cAmounts').value.trim(),
     formType: $('cFormType').value.trim(), formSlug: $('cFormSlug').value.trim(),
@@ -263,7 +265,7 @@ $('btnCancel').onclick = () => { $('dlg').hidden = true; };
 $('btnTest').onclick = async () => {
   try {
     await saveSettings(); setStatus('Test en cours…');
-    const r = await fetch('/api/test'); const j = await r.json();
+    const r = await api('/api/test'); const j = await r.json();
     if (!r.ok) throw new Error(j.error);
     setStatus('Connexion réussie : ' + j.name, 'ok');
   } catch (e) { setStatus(e.message, 'err'); }
@@ -272,7 +274,7 @@ $('btnDebug').onclick = async () => {
   try {
     await saveSettings();
     const o = $('debugOut'); o.style.display = 'block'; o.textContent = '…';
-    const r = await fetch('/api/debug'); const j = await r.json();
+    const r = await api('/api/debug'); const j = await r.json();
     o.textContent = r.ok ? JSON.stringify(j, null, 2) : j.error;
   } catch (e) { setStatus(e.message, 'err'); }
 };
@@ -280,14 +282,14 @@ $('btnSettings').onclick = () => { $('dlg').hidden ? openSettings() : ($('dlg').
 $('btnReload').onclick = load;
 $('btnQuit').onclick = async () => {
   if (!confirm("Fermer l'application ?")) return;
-  try { await fetch('/api/quit'); } catch {}
+  try { await api('/api/quit', { method: 'POST' }); } catch {}
   document.body.innerHTML = '<p style="padding:40px;font-family:sans-serif">Application fermée. Vous pouvez fermer cet onglet.</p>';
 };
 ['title', 'showDate', 'filter'].forEach(id => $(id).addEventListener('input', render));
 
 // signale au programme que la page est ouverte (il se ferme tout seul quand l'onglet est fermé)
 // si l'application s'est fermée entre-temps, on le dit au lieu d'échouer sans explication
-const ping = () => fetch('/api/ping')
+const ping = () => api('/api/ping')
   .then(r => { $('offline').hidden = r.ok; })
   .catch(() => { $('offline').hidden = false; });
 ping(); setInterval(ping, 20000);

@@ -26,7 +26,7 @@ function openBrowser(url) {
   const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
   exec(cmd);
 }
-try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {}
+try { fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 }); } catch {}
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const PORT = 3737;
 const API = process.env.HELLOASSO_API || 'https://api.helloasso.com';  // surchargeable pour les tests
@@ -46,8 +46,13 @@ function loadConfig() {
   try { return { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) }; }
   catch { return { ...DEFAULT_CONFIG }; }
 }
+// fichiers de données lisibles uniquement par l'utilisateur (Mac/Linux ; sous Windows, %APPDATA% est déjà privé)
+function writePrivate(file, data) {
+  fs.writeFileSync(file, data, { mode: 0o600 });
+  try { fs.chmodSync(file, 0o600); } catch {}  // fichier déjà existant créé par une ancienne version
+}
 function saveConfig(c) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify({ ...DEFAULT_CONFIG, ...c }, null, 2));
+  writePrivate(CONFIG_PATH, JSON.stringify({ ...DEFAULT_CONFIG, ...c }, null, 2));
 }
 
 // ---------- OAuth2 ----------
@@ -160,24 +165,94 @@ async function getMembers(cfg) {
 // ---------- Serveur HTTP ----------
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript' };
 
-function send(res, code, body, type = 'application/json; charset=utf-8') {
-  res.writeHead(code, { 'Content-Type': type });
+// En-têtes de sécurité envoyés avec chaque réponse
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',     // le navigateur ne « devine » pas le type d'un fichier
+  'X-Frame-Options': 'DENY',               // l'outil ne peut pas être affiché dans une page d'un autre site
+  'Referrer-Policy': 'no-referrer',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+};
+const PAGE_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
+  "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+function send(res, code, body, type = 'application/json; charset=utf-8', extra = {}) {
+  res.writeHead(code, { ...SECURITY_HEADERS, 'Content-Type': type, 'Cache-Control': 'no-store', ...extra });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
-const readBody = req => new Promise(r => { let b = ''; req.on('data', c => b += c); req.on('end', () => r(b)); });
+const MAX_BODY = 1024 * 1024;  // 1 Mo : largement assez pour les réglages et les listes
+const readBody = req => new Promise((resolve, reject) => {
+  let b = '';
+  req.on('data', c => { b += c; if (b.length > MAX_BODY) { reject(new Error('Requête trop volumineuse')); req.destroy(); } });
+  req.on('end', () => resolve(b));
+  req.on('error', reject);
+});
+async function readJson(req) {
+  const b = await readBody(req);
+  try { return JSON.parse(b); } catch { throw new Error('Requête invalide'); }
+}
+
+// Protection contre les autres sites ouverts dans le navigateur :
+// - l'hôte doit être 127.0.0.1 ou localhost (bloque le « DNS rebinding », qui permettrait à un site de lire les données) ;
+// - aucune requête venant d'un autre site (en-têtes Origin / Sec-Fetch-Site) n'est acceptée ;
+// - les appels /api/* doivent porter l'en-tête X-Trombi, qu'un autre site ne peut pas ajouter (règles CORS du navigateur).
+const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+const ALLOWED_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
+function rejectReason(req, pathname) {
+  if (!ALLOWED_HOSTS.has(String(req.headers.host || '').toLowerCase())) return 'Hôte non autorisé';
+  const origin = req.headers.origin;
+  if (origin !== undefined && !ALLOWED_ORIGINS.has(origin)) return 'Origine non autorisée';
+  if (req.headers['sec-fetch-site'] === 'cross-site') return 'Requête d\'un autre site refusée';
+  // /api/photo est chargé par des balises <img> (pas d'en-tête possible) et ne modifie rien
+  if (pathname.startsWith('/api/') && pathname !== '/api/photo' && req.headers['x-trombi'] !== '1') return 'En-tête manquant';
+  return null;
+}
+
+// Photos : uniquement depuis les serveurs HelloAsso, et le jeton d'accès n'est envoyé qu'à l'API HelloAsso elle-même
+const API_URL = new URL(API);
+const PHOTO_HOSTS = new Set(['stockagehelloassoprod.blob.core.windows.net']);  // stockage de fichiers de HelloAsso (noms exacts)
+function photoUrl(raw) {
+  let u;
+  try { u = new URL(raw); } catch { return null; }
+  if (u.username || u.password) return null;
+  const h = u.hostname.toLowerCase();
+  const helloasso = u.protocol === 'https:' && !u.port
+    && (h === 'helloasso.com' || h.endsWith('.helloasso.com') || PHOTO_HOSTS.has(h));
+  return helloasso || u.origin === API_URL.origin ? u : null;   // (2e cas : API de test via HELLOASSO_API)
+}
+const MAX_PHOTO = 15 * 1024 * 1024;
+async function fetchPhoto(u, cfg) {
+  let r = await fetch(u);
+  if (!r.ok && u.origin === API_URL.origin) {
+    // le jeton n'accompagne que l'appel direct à l'API ; une éventuelle redirection est suivie sans lui
+    r = await fetch(u, { headers: { Authorization: 'Bearer ' + await getToken(cfg) }, redirect: 'manual' });
+    const loc = r.status >= 300 && r.status < 400 && r.headers.get('location');
+    if (loc) {
+      const next = new URL(loc, u);
+      if (next.protocol !== 'https:' && next.origin !== u.origin) throw new Error('Redirection refusée');
+      r = await fetch(next);
+    }
+  }
+  return r;
+}
+
+const CONFIG_KEYS = Object.keys(DEFAULT_CONFIG);
+const isStr = v => typeof v === 'string' && v.length <= 500;
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
+    const refused = rejectReason(req, url.pathname);
+    if (refused) return send(res, 403, { error: refused });
+
     if (url.pathname === '/api/config' && req.method === 'GET') {
       const c = loadConfig();
       return send(res, 200, { ...c, clientSecret: c.clientSecret ? '********' : '' });
     }
     if (url.pathname === '/api/config' && req.method === 'POST') {
-      const incoming = JSON.parse(await readBody(req));
-      const old = loadConfig();
-      if (incoming.clientSecret === '********') incoming.clientSecret = old.clientSecret;
-      saveConfig({ ...old, ...incoming });
+      const incoming = await readJson(req);
+      const old = loadConfig(), next = { ...old };
+      for (const k of CONFIG_KEYS) if (isStr(incoming[k])) next[k] = incoming[k];  // seulement les réglages connus
+      if (incoming.clientSecret === '********') next.clientSecret = old.clientSecret;
+      saveConfig(next);
       token = null;
       return send(res, 200, { ok: true });
     }
@@ -193,14 +268,17 @@ const server = http.createServer(async (req, res) => {
       let h = {};
       try { h = JSON.parse(fs.readFileSync(f, 'utf8')); } catch {}
       if (req.method === 'POST') {
-        const { add = [], remove = [] } = JSON.parse(await readBody(req));
-        for (const m of add) h[m.key] = { firstName: m.firstName, lastName: m.lastName };
-        for (const k of remove) delete h[k];
-        fs.writeFileSync(f, JSON.stringify(h));
+        const { add = [], remove = [] } = await readJson(req);
+        if (!Array.isArray(add) || !Array.isArray(remove)) throw new Error('Requête invalide');
+        for (const m of add) {
+          if (m && isStr(m.key)) h[m.key] = { firstName: isStr(m.firstName) ? m.firstName : '', lastName: isStr(m.lastName) ? m.lastName : '' };
+        }
+        for (const k of remove) if (isStr(k)) delete h[k];
+        writePrivate(f, JSON.stringify(h));
       }
       return send(res, 200, h);
     }
-    if (url.pathname === '/api/quit') {  // permet à un nouveau lancement de remplacer l'ancien
+    if (url.pathname === '/api/quit' && req.method === 'POST') {  // bouton Quitter, ou nouveau lancement qui remplace l'ancien
       send(res, 200, { ok: true });
       return setTimeout(() => process.exit(0), 200);
     }
@@ -213,8 +291,9 @@ const server = http.createServer(async (req, res) => {
       const f = path.join(DATA_DIR, 'printed.json');
       const read = () => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return []; } };
       if (req.method === 'POST') {
-        const ids = JSON.parse(await readBody(req));
-        fs.writeFileSync(f, JSON.stringify([...new Set([...read(), ...ids])]));
+        const ids = await readJson(req);
+        if (!Array.isArray(ids)) throw new Error('Requête invalide');
+        writePrivate(f, JSON.stringify([...new Set([...read(), ...ids.filter(isStr)])]));
         return send(res, 200, { ok: true });
       }
       return send(res, 200, read());
@@ -224,23 +303,31 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { total: items.length, premier: items[0] || null });
     }
     if (url.pathname === '/api/photo') {
-      const target = url.searchParams.get('u');
-      if (!target || !/^https:\/\/[^/]*helloasso[^/]*\//i.test(target)) return send(res, 400, { error: 'URL refusée' });
-      const cfg = loadConfig();
-      let r = await fetch(target);
-      if (!r.ok) r = await fetch(target, { headers: { Authorization: 'Bearer ' + await getToken(cfg) } });
+      const u = photoUrl(url.searchParams.get('u') || '');
+      if (!u) return send(res, 400, { error: 'URL refusée' });
+      const r = await fetchPhoto(u, loadConfig());
       if (!r.ok) return send(res, 502, { error: 'Photo inaccessible (' + r.status + ')' });
-      res.writeHead(200, { 'Content-Type': r.headers.get('content-type') || 'image/jpeg', 'Cache-Control': 'max-age=3600' });
-      return res.end(Buffer.from(await r.arrayBuffer()));
+      const type = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      // on ne renvoie que de vraies images (jamais de HTML ou de SVG, qui pourraient contenir du script)
+      if (!/^image\/(jpeg|png|gif|webp|heic|heif|avif|bmp)$/.test(type)) return send(res, 415, { error: 'Ce fichier n\'est pas une photo' });
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > MAX_PHOTO) return send(res, 413, { error: 'Photo trop volumineuse' });
+      return send(res, 200, buf, type, { 'Cache-Control': 'private, max-age=3600', 'Content-Security-Policy': "default-src 'none'; sandbox" });
     }
-    // fichiers statiques
-    const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-    const full = path.join(__dirname, 'public', path.normalize(file).replace(/^(\.\.[/\\])+/, ''));
-    if (!full.startsWith(path.join(__dirname, 'public'))) return send(res, 403, 'Interdit', 'text/plain');
-    if (fs.existsSync(full)) return send(res, 200, fs.readFileSync(full), MIME[path.extname(full)] || 'application/octet-stream');
+    if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Introuvable' });
+    // fichiers statiques (uniquement dans le dossier public)
+    const root = path.join(__dirname, 'public');
+    let file;
+    try { file = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1)); } catch { return send(res, 400, 'Requête invalide', 'text/plain'); }
+    const full = path.resolve(root, file);
+    if (!full.startsWith(root + path.sep)) return send(res, 403, 'Interdit', 'text/plain');
+    if (fs.existsSync(full) && fs.statSync(full).isFile()) {
+      const ext = path.extname(full);
+      return send(res, 200, fs.readFileSync(full), MIME[ext] || 'application/octet-stream', ext === '.html' ? { 'Content-Security-Policy': PAGE_CSP } : {});
+    }
     send(res, 404, 'Introuvable', 'text/plain');
   } catch (e) {
-    send(res, 500, { error: e.message });
+    if (!res.headersSent) send(res, 500, { error: e.message });
   }
 });
 
@@ -262,7 +349,7 @@ server.on('error', async e => {
   if (e.code !== 'EADDRINUSE') throw e;
   if (retried) { openBrowser(APP_URL); return process.exit(0); }
   retried = true;  // une ancienne instance tourne : on la ferme puis on prend sa place
-  try { await fetch(`http://127.0.0.1:${PORT}/api/quit`); } catch {}
+  try { await fetch(`http://127.0.0.1:${PORT}/api/quit`, { method: 'POST', headers: { 'X-Trombi': '1' } }); } catch {}
   setTimeout(start, 800);
 });
 start();

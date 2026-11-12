@@ -17,6 +17,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npm test
       - run: npx pkg . --targets node22-win-x64 --output dist/Trombinoscope.exe
       - uses: actions/upload-artifact@v4
         with:
