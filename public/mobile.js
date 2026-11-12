@@ -163,6 +163,14 @@
       };
       await Promise.all([run(), run(), run(), run()]);
     },
+    // photo en data: (ou null si inaccessible), pour l'export PDF
+    photo: raw => loadPhoto(raw),
+    // enregistre le PDF : fenêtre « Enregistrer sous » d'Android ; renvoie { saved: true/false }
+    savePdf(bytes, name) {
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return Printer.savePdf({ data: btoa(bin), name: String(name || 'Trombinoscope.pdf').slice(0, 100) });
+    },
     // ouvre la fenêtre d'impression d'Android (imprimante ou « Enregistrer au format PDF »)
     print: name => Printer.print({ name: String(name || 'Trombinoscope').slice(0, 80) }),
   };

@@ -1,6 +1,6 @@
 {
   "name": "trombinoscope-android",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "private": true,
   "description": "Appli Android du Trombinoscope HelloAsso (Capacitor), à partir de ../public",
   "scripts": {

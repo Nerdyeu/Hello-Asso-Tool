@@ -1,6 +1,14 @@
 package fr.asso.trombinoscope;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.util.Base64;
+
+import androidx.activity.result.ActivityResult;
+
+import java.io.OutputStream;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -17,6 +25,7 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
@@ -72,5 +81,48 @@ public class TrombiPrintPlugin extends Plugin {
                 call.reject("Impression impossible : " + e.getMessage(), e);
             }
         });
+    }
+
+    /** PDF en attente d'enregistrement (le temps que l'utilisateur choisisse l'emplacement). */
+    private byte[] pendingPdf;
+
+    /** Export PDF : ouvre la fenêtre « Enregistrer sous » d'Android, puis écrit le fichier choisi. */
+    @PluginMethod
+    public void savePdf(PluginCall call) {
+        String data = call.getString("data");
+        String name = call.getString("name", "Trombinoscope.pdf");
+        if (data == null || data.isEmpty()) { call.reject("PDF vide"); return; }
+        try {
+            pendingPdf = Base64.decode(data, Base64.DEFAULT);
+        } catch (IllegalArgumentException e) {
+            call.reject("PDF invalide"); return;
+        }
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/pdf");
+        intent.putExtra(Intent.EXTRA_TITLE, name.replaceAll("[\\\\/:*?\"<>|]", " "));
+        startActivityForResult(call, intent, "pdfSaved");
+    }
+
+    @ActivityCallback
+    private void pdfSaved(PluginCall call, ActivityResult result) {
+        byte[] pdf = pendingPdf;
+        pendingPdf = null;
+        if (call == null) return;
+        JSObject ret = new JSObject();
+        Uri uri = result.getData() == null ? null : result.getData().getData();
+        if (result.getResultCode() != Activity.RESULT_OK || uri == null || pdf == null) {
+            ret.put("saved", false);   // annulé par l'utilisateur
+            call.resolve(ret);
+            return;
+        }
+        try (OutputStream out = getContext().getContentResolver().openOutputStream(uri, "w")) {
+            if (out == null) throw new Exception("fichier inaccessible");
+            out.write(pdf);
+            ret.put("saved", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Enregistrement impossible : " + e.getMessage(), e);
+        }
     }
 }

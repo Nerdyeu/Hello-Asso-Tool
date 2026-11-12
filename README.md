@@ -36,7 +36,7 @@ Dans les deux cas :
 1. Sur le téléphone ou la tablette, ouvrez les **[Releases](../../releases/latest)** et téléchargez `Trombinoscope-Android.apk`.
 2. Ouvrez le fichier téléchargé. Android demande d'autoriser l'installation d'applications depuis votre navigateur (ou « sources inconnues ») : acceptez, puis **Installer**. Si Play Protect affiche un avertissement (appli inconnue), choisissez *Installer quand même*.
 3. Ouvrez **Trombinoscope**. Suite identique à Windows (Réglages, Tester la connexion, Enregistrer).
-4. Le bouton **Trombinoscope (n)** ouvre la fenêtre d'impression d'Android : choisissez une imprimante ou **Enregistrer au format PDF**.
+4. Le bouton **Trombinoscope (n)** ouvre la fenêtre d'impression d'Android : choisissez une imprimante ou **Enregistrer au format PDF**. Le bouton **Exporter en PDF** ouvre directement la fenêtre « Enregistrer sous » pour choisir où ranger le fichier.
 5. Mise à jour : téléchargez et installez le nouvel APK par-dessus l'ancien, les réglages sont conservés.
 
 Les réglages restent dans la mémoire privée de l'appli (ils sont effacés si on la désinstalle).
@@ -66,9 +66,10 @@ Le **Client Secret** est un mot de passe : ne le communiquez pas, ne l'envoyez p
    - un clic sur une carte la coche ou la décoche ;
    - **Tout sélectionner** / **Tout désélectionner** ;
    - **Sélectionner les nouveaux** coche seulement ceux qui n'ont jamais été imprimés (pratique en cours d'année) ;
-   - **Filtre** : tapez un nom pour retrouver quelqu'un.
+   - **Filtre** : tapez un nom pour retrouver quelqu'un ;
+   - **Afficher : Tous / Femmes / Hommes** : ne garde que les femmes ou que les hommes (affichage, sélection et trombinoscope). Ce choix n'apparaît que si le formulaire d'adhésion HelloAsso pose la question (« Civilité », « Sexe » ou « Genre ») ; sinon, indiquez le nom de cette question dans **Réglages > Nom du champ sexe / civilité**. Le sexe n'est jamais deviné d'après le prénom : les adhérents sans réponse n'apparaissent que dans « Tous ».
 3. Si besoin, changez le **Titre** (en haut de chaque page) et cochez ou non **Afficher la date d'adhésion**.
-4. Cliquez sur **Trombinoscope (n)** (n = nombre d'adhérents cochés). Choisissez une imprimante, ou **Enregistrer au format PDF**. 20 adhérents par page A4.
+4. Pour imprimer : cliquez sur **Trombinoscope (n)** (n = nombre d'adhérents cochés) et choisissez une imprimante. Pour obtenir un fichier : cliquez sur **Exporter en PDF**, le fichier est enregistré directement (dossier *Téléchargements* sur ordinateur, emplacement au choix sur Android). Dans les deux cas : 20 adhérents par page A4.
 5. Après l'impression, l'outil demande s'il faut **marquer ces adhérents comme imprimés** : répondez **OK** pour qu'ils ne soient plus proposés par « Sélectionner les nouveaux ». Un badge vert « déjà imprimé » s'affiche sur leur carte.
 
 ### 3. Retirer quelqu'un du trombinoscope

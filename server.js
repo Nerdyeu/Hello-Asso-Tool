@@ -83,7 +83,8 @@ function rejectReason(req, pathname) {
   if (!ALLOWED_HOSTS.has(String(req.headers.host || '').toLowerCase())) return 'Hôte non autorisé';
   const origin = req.headers.origin;
   if (origin !== undefined && !ALLOWED_ORIGINS.has(origin)) return 'Origine non autorisée';
-  if (req.headers['sec-fetch-site'] === 'cross-site') return 'Requête d\'un autre site refusée';
+  // (la page elle-même, sans données, reste accessible depuis un lien d'un autre site)
+  if (pathname.startsWith('/api/') && req.headers['sec-fetch-site'] === 'cross-site') return 'Requête d\'un autre site refusée';
   // /api/photo est chargé par des balises <img> (pas d'en-tête possible) et ne modifie rien
   if (pathname.startsWith('/api/') && pathname !== '/api/photo' && req.headers['x-trombi'] !== '1') return 'En-tête manquant';
   return null;

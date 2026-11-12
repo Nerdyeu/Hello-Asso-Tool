@@ -15,6 +15,7 @@
     formType: '',      // ex: Membership (vide = tous les formulaires de l'asso)
     formSlug: '',      // ex: adhesion-2025-2026 (vide = tous)
     photoField: '',    // nom du champ personnalisé contenant la photo (vide = détection auto)
+    genderField: '',   // nom du champ personnalisé contenant le sexe / la civilité (vide = détection auto)
     since: '',         // date AAAA-MM-JJ : ne garder que les adhésions depuis cette date
     amounts: '100, 110, 160, 170',   // montants payés (en €) à retenir ; vide = tous les montants
   };
@@ -100,6 +101,29 @@
     return f ? f.answer.trim() : null;
   }
 
+  // Sexe : HelloAsso n'a pas de champ standard ; on le lit dans la réponse à une question du formulaire
+  // (« Sexe », « Genre », « Civilité »…), ou dans un éventuel champ gender/civility. Jamais deviné d'après le prénom.
+  const GENDER_NAME = /sexe|genre|civilit|gender|^titre$/i;
+  function genderOf(answer) {
+    const a = String(answer || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase().replace(/\./g, '');
+    if (!a) return null;
+    if (/^(f|femme|feminin|female|woman|mme|madame|mlle|mademoiselle|fille)\b/.test(a)) return 'F';
+    if (/^(h|homme|masculin|male|man|m|mr|monsieur|garcon)\b/.test(a)) return 'H';
+    return null;
+  }
+  function findGender(item, genderField) {
+    const fields = item.customFields || [];
+    if (genderField) {
+      const f = fields.find(f => (f.name || '').toLowerCase().includes(genderField.toLowerCase()));
+      return f ? genderOf(f.answer) : null;
+    }
+    for (const f of fields) if (GENDER_NAME.test(f.name || '')) { const g = genderOf(f.answer); if (g) return g; }
+    for (const p of [item.user, item.payer]) {
+      for (const k of ['gender', 'sex', 'civility', 'title']) { const g = p && genderOf(p[k]); if (g) return g; }
+    }
+    return null;
+  }
+
   // minuscules, sans accents, tirets/espaces normalisés : sert à repérer les doublons de noms
   const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -118,6 +142,7 @@
       lastName: last,
       date: (item.order && item.order.date) || null,
       photo: findPhoto(item, cfg.photoField),
+      gender: findGender(item, cfg.genderField),   // 'F', 'H' ou null (inconnu)
     };
   }
 
@@ -140,11 +165,13 @@
     // doublons : une personne = une carte. Une adhésion AVEC photo l'emporte toujours sur une sans photo ;
     // à photo égale, la plus récente gagne.
     const better = (a, b) => (!!a.photo !== !!b.photo) ? !!a.photo : (a.date || '') > (b.date || '');
-    const byKey = new Map();
+    const byKey = new Map(), genderByKey = new Map();
     for (const m of members) {
       const prev = byKey.get(m.key);
       if (!prev || better(m, prev)) byKey.set(m.key, m);
+      if (m.gender && !genderByKey.has(m.key)) genderByKey.set(m.key, m.gender);   // sexe connu sur une autre adhésion
     }
+    for (const [k, m] of byKey) if (!m.gender && genderByKey.has(k)) byKey.set(k, { ...m, gender: genderByKey.get(k) });
     const list = [...byKey.values()].sort((a, b) => a.lastName.localeCompare(b.lastName, 'fr') || a.firstName.localeCompare(b.firstName, 'fr'));
     return { members: list, forms, amounts, total: alive.length, matched: kept.length, priced: priced.length };
   }
@@ -202,12 +229,19 @@
       async debug(cfg) {
         const items = await fetchItems(cfg);
         const photos = items.map(i => findPhoto(i, cfg.photoField)).filter(Boolean);
-        return { total: items.length, avecPhoto: photos.length, exemplesPhoto: photos.slice(0, 3), premier: items[0] || null };
+        const genders = items.map(i => findGender(i, cfg.genderField));
+        const champsPossibles = [...new Set(items.flatMap(i => (i.customFields || []).map(f => f.name)).filter(Boolean))];
+        return {
+          total: items.length, avecPhoto: photos.length, exemplesPhoto: photos.slice(0, 3),
+          sexe: { femmes: genders.filter(g => g === 'F').length, hommes: genders.filter(g => g === 'H').length,
+                  inconnu: genders.filter(g => !g).length, champsDuFormulaire: champsPossibles },
+          premier: items[0] || null,
+        };
       },
       // le jeton ne doit accompagner que les appels à HelloAsso (jamais une photo hébergée ailleurs)
       tokenAllowed: u => tokenAllowed(u, api),
     };
   }
 
-  return { DEFAULT_API, DEFAULT_CONFIG, SECRET_MASK, isStr, mergeConfig, publicConfig, photoUrl, imageType, photoType, tokenAllowed, MAX_PHOTO, findPhoto, buildMembers, createClient };
+  return { DEFAULT_API, DEFAULT_CONFIG, SECRET_MASK, isStr, mergeConfig, publicConfig, photoUrl, imageType, photoType, tokenAllowed, MAX_PHOTO, findPhoto, findGender, genderOf, buildMembers, createClient };
 });

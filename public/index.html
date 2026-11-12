@@ -23,7 +23,7 @@
   .offline { background:var(--danger); color:#fff; padding:10px 14px; border-radius:8px; margin-bottom:12px; font-weight:600; }
   .offline[hidden] { display:none; }
   .options { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-bottom:12px; color:var(--muted); font-size:.9rem; }
-  .options input[type=text] { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink); }
+  .options input[type=text], .options select { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink); }
 
   /* écran */
   .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:14px; }
@@ -75,6 +75,7 @@
   <button id="btnReload">Actualiser</button>
   <button id="btnSettings">Réglages</button>
   <button id="btnQuit">Quitter</button>
+  <button id="btnPdf" disabled title="Enregistre directement le trombinoscope en fichier PDF">Exporter en PDF</button>
   <button id="btnPrint" class="primary" disabled>Trombinoscope (0)</button>
 </header>
 <main>
@@ -90,6 +91,7 @@
       <label>Type de formulaire <small>(optionnel, ex : Membership)</small></label><input id="cFormType">
       <label>Slug du formulaire <small>(optionnel)</small></label><input id="cFormSlug">
       <label>Nom du champ photo <small>(optionnel, détection auto sinon)</small></label><input id="cPhoto">
+      <label>Nom du champ sexe / civilité <small>(optionnel, détection auto sinon : question « Sexe », « Genre » ou « Civilité » du formulaire)</small></label><input id="cGender">
       <label>Adhésions depuis le <small>(optionnel)</small></label><input id="cSince" type="date">
       <div id="status"></div>
       <div class="row">
@@ -106,6 +108,9 @@
       <label>Titre <input type="text" id="title" value="Trombinoscope"></label>
       <label><input type="checkbox" id="showDate" checked> Afficher la date d'adhésion</label>
       <label>Filtre <input type="text" id="filter" placeholder="nom…"></label>
+      <label id="genderBox" hidden>Afficher <select id="gender">
+        <option value="">Tous</option><option value="F">Femmes</option><option value="H">Hommes</option>
+      </select></label>
     </div>
     <div class="options">
       <button id="btnNew">Sélectionner les nouveaux</button>
@@ -127,6 +132,7 @@
 
 <script src="core.js"></script>
 <script src="mobile.js"></script>
+<script src="pdf.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const PER_PAGE = 20;
@@ -138,7 +144,8 @@ let members = [], hidden = {};
 const selected = new Set(), printed = new Set();
 const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const visible = () => members.filter(m => !hidden[m.key]);
+// adhérents pris en compte : non retirés, et du sexe choisi (le filtre s'applique aussi à la sélection et à l'impression)
+const visible = () => { const g = $('gender').value; return members.filter(m => !hidden[m.key] && (!g || m.gender === g)); };
 
 function cardHtml(m, { interactive }) {
   const photo = m.photo ? (MOBILE ? `<img class="photo" data-photo="${esc(m.photo)}" src="${MOBILE.photoSrc(m.photo)}" alt="">`
@@ -170,6 +177,7 @@ function render() {
   const n = visible().filter(m => selected.has(m.key)).length;
   $('btnPrint').textContent = `Trombinoscope (${n})`;
   $('btnPrint').disabled = n === 0;
+  if (!pdfBusy) $('btnPdf').disabled = n === 0;
   $('pages').textContent = n ? `→ ${Math.ceil(n / PER_PAGE)} page(s) A4, ${PER_PAGE} adhérents maximum par page` : '';
   const hc = Object.keys(hidden).length;
   $('btnHidden').textContent = `Retirés (${hc})`;
@@ -200,9 +208,15 @@ async function load() {
     members = j.members;
     printed.clear(); (await (await api('/api/printed')).json()).forEach(k => printed.add(k));
     hidden = await (await api('/api/hidden')).json();
-    const v = visible(), sans = v.filter(m => !m.photo).length;
-    let t = `${v.length} adhérent(s)` + (sans ? ` — ${sans} sans photo` : '');
-    if (!v.length) {
+    // filtre Femmes/Hommes proposé seulement si le formulaire HelloAsso renseigne le sexe
+    const all = members.filter(m => !hidden[m.key]);
+    const nF = all.filter(m => m.gender === 'F').length, nH = all.filter(m => m.gender === 'H').length;
+    $('genderBox').hidden = !(nF + nH);
+    if (!(nF + nH)) $('gender').value = '';
+    const v = visible(), sans = all.filter(m => !m.photo).length;
+    let t = `${all.length} adhérent(s)` + (sans ? ` — ${sans} sans photo` : '');
+    if (nF + nH) t += ` — ${nF} femme(s), ${nH} homme(s)` + (all.length - nF - nH ? `, ${all.length - nF - nH} non renseigné(s)` : '');
+    if (!all.length) {
       const names = Object.entries(j.forms).map(([n, c]) => `${n} (${c})`).join(' ; ') || 'aucune';
       const amts = Object.entries(j.amounts).map(([n, c]) => `${n} (${c})`).join(' ; ') || 'aucun';
       t = `Aucun adhérent trouvé : ${j.matched} adhésion(s) sur ${j.total} article(s), dont ${j.priced} avec les bons montants. ` +
@@ -257,6 +271,40 @@ $('btnPrint').onclick = async () => {
 };
 window.addEventListener('beforeprint', () => { if (!MOBILE) buildPrint(); });
 window.addEventListener('afterprint', () => { if (!MOBILE) markPrinted(); });
+
+// ----- export PDF (fichier fabriqué directement, même mise en page que l'impression) -----
+let pdfBusy = false;
+const loadImg = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+$('btnPdf').onclick = async () => {
+  const list = visible().filter(m => selected.has(m.key));
+  if (!list.length) return;
+  const b = $('btnPdf'), title = $('title').value.trim() || 'Trombinoscope';
+  pdfBusy = true; b.disabled = true;
+  try {
+    const bytes = await TrombiPdf.exportPdf(list, {
+      title, showDate: $('showDate').checked, fmtDate,
+      loadImage: async m => {
+        if (!MOBILE) return loadImg(`/api/photo?u=${encodeURIComponent(m.photo)}`);
+        const d = await MOBILE.photo(m.photo);
+        return d ? loadImg(d) : null;
+      },
+      onProgress: (i, n) => { b.textContent = `Photos ${i}/${n}…`; },
+    });
+    b.textContent = 'Enregistrement…';
+    const name = title.replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.pdf';
+    if (MOBILE) {
+      const r = await MOBILE.savePdf(bytes, name);   // fenêtre « Enregistrer sous » d'Android
+      if (r && r.saved) await markPrinted();
+    } else {
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      const a = document.createElement('a'); a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      await markPrinted();
+    }
+  } catch (e) { alert('Export PDF impossible : ' + (e.message || e)); }
+  finally { pdfBusy = false; b.textContent = 'Exporter en PDF'; render(); }
+};
 async function markPrinted() {
   const keys = visible().filter(m => selected.has(m.key)).map(m => m.key);
   if (!keys.length) return;
@@ -272,7 +320,7 @@ async function openSettings() {
   $('cClientId').value = c.clientId; $('cClientSecret').value = c.clientSecret;
   $('cOrg').value = c.organizationSlug; $('cAmounts').value = c.amounts;
   $('cFormType').value = c.formType; $('cFormSlug').value = c.formSlug;
-  $('cPhoto').value = c.photoField; $('cSince').value = c.since;
+  $('cPhoto').value = c.photoField; $('cSince').value = c.since; $('cGender').value = c.genderField || '';
   $('debugOut').style.display = 'none';
   setStatus('');
   $('dlg').hidden = false;
@@ -284,7 +332,7 @@ async function saveSettings() {
     clientId: $('cClientId').value.trim(), clientSecret: $('cClientSecret').value.trim(),
     organizationSlug: $('cOrg').value.trim(), amounts: $('cAmounts').value.trim(),
     formType: $('cFormType').value.trim(), formSlug: $('cFormSlug').value.trim(),
-    photoField: $('cPhoto').value.trim(), since: $('cSince').value }) });
+    photoField: $('cPhoto').value.trim(), genderField: $('cGender').value.trim(), since: $('cSince').value }) });
   if (!r.ok) throw new Error((await r.json()).error || 'Enregistrement impossible');
 }
 $('btnSave').onclick = async () => {
@@ -317,6 +365,7 @@ $('btnQuit').onclick = async () => {
 };
 if (MOBILE) $('btnQuit').hidden = true;   // sur Android, on quitte l'appli normalement
 ['title', 'showDate', 'filter'].forEach(id => $(id).addEventListener('input', render));
+$('gender').addEventListener('change', render);
 
 // signale au programme que la page est ouverte (il se ferme tout seul quand l'onglet est fermé)
 // si l'application s'est fermée entre-temps, on le dit au lieu d'échouer sans explication

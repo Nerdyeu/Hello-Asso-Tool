@@ -60,6 +60,7 @@ const raw = (p, host) => new Promise(r => http.get({ host: '127.0.0.1', port: 37
     check('sans en-tête X-Trombi : refusé', (await get('/api/members', {})).status === 403);
     check('Origin d\'un autre site : refusé', (await get('/api/members', { ...H, Origin: 'https://evil.example' })).status === 403);
     check('Sec-Fetch-Site cross-site : refusé', (await get('/api/photo?u=x', { 'Sec-Fetch-Site': 'cross-site' })).status === 403);
+    check('page ouverte depuis un lien d\'un autre site : affichée', (await get('/', { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate' })).status === 200);
     check('Host étranger (DNS rebinding) : refusé', (await raw('/api/members', 'evil.example:3737')) === 403);
     check('Host étranger sur la page : refusé', (await raw('/', 'evil.example:3737')) === 403);
     check('/api/quit en GET : sans effet', (await get('/api/quit')).status === 404);
@@ -99,6 +100,21 @@ const raw = (p, host) => new Promise(r => http.get({ host: '127.0.0.1', port: 37
       && !tok('https://stockagehelloassoprod.blob.core.windows.net/a.jpg'));
     check('SVG jamais accepté comme photo', core.photoType(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), 'image/svg+xml') === null
       && core.photoType(Buffer.from('<html></html>'), 'image/png') === null && core.photoType(Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), 'image/tiff') === 'image/tiff');
+    // sexe : lu dans la question du formulaire, jamais deviné
+    const G = core.genderOf;
+    check('sexe : réponses reconnues', G('Femme') === 'F' && G('Mme') === 'F' && G('Madame') === 'F' && G('Mlle.') === 'F' && G('Féminin') === 'F'
+      && G('Homme') === 'H' && G('M.') === 'H' && G('Monsieur') === 'H' && G('Masculin') === 'H' && G('H') === 'H' && G('F') === 'F'
+      && G('Autre') === null && G('') === null && G('Non précisé') === null);
+    const it = fields => ({ customFields: fields });
+    check('sexe : détection du champ', core.findGender(it([{ name: 'Civilité', answer: 'Madame' }])) === 'F'
+      && core.findGender(it([{ name: 'Sexe', answer: 'Homme' }])) === 'H'
+      && core.findGender(it([{ name: 'Ville', answer: 'Metz' }])) === null
+      && core.findGender(it([{ name: 'Vous êtes', answer: 'Femme' }]), 'vous êtes') === 'F');
+    const bm = core.buildMembers([
+      { id: 1, type: 'Membership', amount: 10000, user: { firstName: 'Ana', lastName: 'Test' }, order: { date: '2026-01-01' }, customFields: [{ name: 'Sexe', answer: 'Femme' }] },
+      { id: 2, type: 'Membership', amount: 10000, user: { firstName: 'Ana', lastName: 'Test' }, order: { date: '2026-02-01' }, customFields: [{ name: 'Photo', type: 'File', answer: 'https://www.helloasso.com/a.jpg' }] },
+    ], { amounts: '100' });
+    check('sexe : conservé lors de la fusion des doublons', bm.members.length === 1 && bm.members[0].gender === 'F' && !!bm.members[0].photo);
     const leaked = seenAuth.filter(([u, a]) => a && ['/photo.png', '/octet.jpg'].includes(u));
     check('photos publiques : téléchargées sans jeton', leaked.length === 0, JSON.stringify(leaked));
     check('/api/quit en POST : ferme l\'appli', (await get('/api/quit', H, 'POST')).status === 200);
