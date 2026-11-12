@@ -91,6 +91,14 @@ const raw = (p, host) => new Promise(r => http.get({ host: '127.0.0.1', port: 37
     check('corps énorme : refusé', await get('/api/printed', H, 'POST', 'x'.repeat(2 * 1024 * 1024)).then(x => x.status === 500, () => true));
     r = await get('/', {});
     check('page : en-têtes de sécurité', r.headers.get('x-frame-options') === 'DENY' && /frame-ancestors 'none'/.test(r.headers.get('content-security-policy') || ''));
+    const core = require(path.resolve(__dirname, '..', 'public', 'core.js'));
+    const tok = s => core.tokenAllowed(new URL(s));
+    check('jeton autorisé vers les serveurs HelloAsso', tok('https://api.helloasso.com/v5/x') && tok('https://www.helloasso.com/a.jpg') && tok('https://helloasso.com/a.jpg'));
+    check('jeton refusé vers les faux domaines', !tok('https://helloasso.evil.com/a.jpg') && !tok('https://evilhelloasso.com/a.jpg')
+      && !tok('https://helloasso.com.evil.com/a.jpg') && !tok('http://www.helloasso.com/a.jpg') && !tok('https://www.helloasso.com:8443/a.jpg')
+      && !tok('https://stockagehelloassoprod.blob.core.windows.net/a.jpg'));
+    check('SVG jamais accepté comme photo', core.photoType(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), 'image/svg+xml') === null
+      && core.photoType(Buffer.from('<html></html>'), 'image/png') === null && core.photoType(Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), 'image/tiff') === 'image/tiff');
     const leaked = seenAuth.filter(([u, a]) => a && ['/photo.png', '/octet.jpg'].includes(u));
     check('photos publiques : téléchargées sans jeton', leaked.length === 0, JSON.stringify(leaked));
     check('/api/quit en POST : ferme l\'appli', (await get('/api/quit', H, 'POST')).status === 200);

@@ -47,20 +47,23 @@
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) return info;
     if (b64.length * 0.75 > core.MAX_PHOTO) return { ...info, tooBig: true };
     const head = Uint8Array.from(atob(b64.slice(0, 64)), c => c.charCodeAt(0));
-    return { ...info, b64, type: core.imageType(head) };
+    return { ...info, b64, type: core.photoType(head, info.contentType) };
   }
-  // le jeton n'accompagne que l'appel direct à l'API HelloAsso ; une redirection est suivie sans lui
+  // 1er essai sans jeton ; sinon avec le jeton, uniquement vers les serveurs de HelloAsso (core.tokenAllowed),
+  // en suivant chaque redirection à la main (le jeton n'est transmis que si l'étape suivante est chez HelloAsso)
   async function fetchPhoto(u) {
-    let res = await getImage(u);
-    if (!res.type && client.isApiUrl(u)) {
-      res = await getImage(u, { Authorization: 'Bearer ' + await client.getToken(loadConfig()) }, true);
-      if (res.location) {
-        const next = new URL(res.location, u);
-        if (next.protocol !== 'https:') throw new Error('Redirection refusée');
-        res = await getImage(next);
-      }
+    const res = await getImage(u);
+    if (res.type || !client.tokenAllowed(u)) return res;
+    const auth = { Authorization: 'Bearer ' + await client.getToken(loadConfig()) };
+    let url = u;
+    for (let i = 0; i < 5; i++) {
+      const r = await getImage(url, client.tokenAllowed(url) ? auth : {}, true);
+      if (!r.location) return r;
+      const next = new URL(r.location, url);
+      if (next.protocol !== 'https:') throw new Error('Redirection refusée');
+      url = next;
     }
-    return res;
+    throw new Error('Trop de redirections');
   }
   const photoProblem = res => res.tooBig ? 'Photo trop volumineuse'
     : res.status < 200 || res.status >= 300 ? `Photo inaccessible (HTTP ${res.status})`

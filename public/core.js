@@ -33,7 +33,7 @@
 
   // ---------- Photos ----------
   // Adresses acceptées : en https, sur un serveur HelloAsso (nom contenant « helloasso ») ou sur son stockage de fichiers.
-  // La sécurité ne repose pas sur ce filtre : le jeton d'accès n'est envoyé qu'à l'API HelloAsso (voir isApiUrl),
+  // La sécurité ne repose pas sur ce filtre : le jeton d'accès n'est envoyé qu'aux serveurs de HelloAsso (voir tokenAllowed),
   // et seules de vraies images, reconnues à leur contenu, sont renvoyées à la page.
   const PHOTO_HOSTS = ['stockagehelloassoprod.blob.core.windows.net'];
   function photoUrl(raw, api = DEFAULT_API) {
@@ -61,6 +61,28 @@
       if (/^(hei[cmsx]|hev[cmsx]|mif1|msf1)$/.test(brand)) return 'image/heic';
     }
     return null;
+  }
+  // Serveurs qui ont le droit de recevoir le jeton d'accès : l'API, et les serveurs appartenant réellement à HelloAsso
+  // (helloasso.com et ses sous-domaines, en https). Jamais un domaine qui contient seulement « helloasso »
+  // (ex. helloasso.site-pirate.com) : c'était la faille des versions antérieures à 1.3.3.
+  function tokenAllowed(u, api = DEFAULT_API) {
+    if (u.origin === new URL(api).origin) return true;
+    const h = u.hostname.toLowerCase();
+    return u.protocol === 'https:' && !u.port && !u.username && !u.password && (h === 'helloasso.com' || h.endsWith('.helloasso.com'));
+  }
+  // type d'image à renvoyer à la page : reconnu dans le contenu, sinon l'étiquette du serveur si c'est une image
+  // (jamais SVG, qui peut contenir du script)
+  function photoType(bytes, announced) {
+    const t = imageType(bytes);
+    if (t) return t;
+    const a = String(announced || '').split(';')[0].trim().toLowerCase();
+    return /^image\/[a-z0-9.+-]+$/.test(a) && !a.includes('svg') && looksLikeImageBytes(bytes) ? a : null;
+  }
+  // garde-fou : un contenu qui commence comme du texte/HTML n'est jamais considéré comme une image
+  function looksLikeImageBytes(b) {
+    if (!b || !b.length) return false;
+    const start = String.fromCharCode(...Array.from(b.slice(0, 64))).trimStart().toLowerCase();
+    return !/^(<|\{|\[|%pdf)/.test(start);
   }
   const MAX_PHOTO = 15 * 1024 * 1024;
 
@@ -182,10 +204,10 @@
         const photos = items.map(i => findPhoto(i, cfg.photoField)).filter(Boolean);
         return { total: items.length, avecPhoto: photos.length, exemplesPhoto: photos.slice(0, 3), premier: items[0] || null };
       },
-      // le jeton ne doit accompagner que les appels directs à l'API (jamais une photo hébergée ailleurs)
-      isApiUrl: u => u.origin === new URL(api).origin,
+      // le jeton ne doit accompagner que les appels à HelloAsso (jamais une photo hébergée ailleurs)
+      tokenAllowed: u => tokenAllowed(u, api),
     };
   }
 
-  return { DEFAULT_API, DEFAULT_CONFIG, SECRET_MASK, isStr, mergeConfig, publicConfig, photoUrl, imageType, MAX_PHOTO, findPhoto, buildMembers, createClient };
+  return { DEFAULT_API, DEFAULT_CONFIG, SECRET_MASK, isStr, mergeConfig, publicConfig, photoUrl, imageType, photoType, tokenAllowed, MAX_PHOTO, findPhoto, buildMembers, createClient };
 });

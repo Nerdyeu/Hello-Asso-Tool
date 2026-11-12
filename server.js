@@ -98,21 +98,24 @@ async function getImage(u, headers = {}, redirect = 'follow') {
   if (Number(r.headers.get('content-length') || 0) > core.MAX_PHOTO) return { ...info, tooBig: true };
   const buf = Buffer.from(await r.arrayBuffer());
   if (buf.length > core.MAX_PHOTO) return { ...info, tooBig: true };
-  return { ...info, buf, type: core.imageType(buf) };
+  return { ...info, buf, type: core.photoType(buf, info.contentType) };
 }
-// Le jeton d'accès n'est envoyé qu'à l'API HelloAsso elle-même, et jamais en cas de redirection.
-// On l'essaie aussi quand la réponse sans jeton n'est pas une image (page « non autorisé » renvoyée en 200).
+// 1er essai sans jeton (photo publique). Sinon, nouvel essai avec le jeton, comme en v1.3.0, mais uniquement vers
+// les serveurs de HelloAsso (core.tokenAllowed) : chaque redirection est suivie à la main et le jeton n'est
+// transmis à l'étape suivante que si elle est elle aussi chez HelloAsso.
 async function fetchPhoto(u, cfg) {
-  let res = await getImage(u);
-  if (!res.type && client.isApiUrl(u)) {
-    res = await getImage(u, { Authorization: 'Bearer ' + await client.getToken(cfg) }, 'manual');
-    if (res.location) {
-      const next = new URL(res.location, u);
-      if (next.protocol !== 'https:' && next.origin !== u.origin) throw new Error('Redirection refusée');
-      res = await getImage(next);
-    }
+  const res = await getImage(u);
+  if (res.type || !client.tokenAllowed(u)) return res;
+  const auth = { Authorization: 'Bearer ' + await client.getToken(cfg) };
+  let url = u;
+  for (let i = 0; i < 5; i++) {
+    const r = await getImage(url, client.tokenAllowed(url) ? auth : {}, 'manual');
+    if (!r.location) return r;
+    const next = new URL(r.location, url);
+    if (next.protocol !== 'https:' && next.origin !== url.origin) throw new Error('Redirection refusée');
+    url = next;
   }
-  return res;
+  throw new Error('Trop de redirections');
 }
 const photoProblem = res => res.tooBig ? 'Photo trop volumineuse'
   : res.status < 200 || res.status >= 300 ? `Photo inaccessible (HTTP ${res.status})`
