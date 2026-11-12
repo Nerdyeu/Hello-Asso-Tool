@@ -13,10 +13,23 @@ Outil Windows pour générer le trombinoscope des adhérents d'une association �
 
 ### Sur Mac
 
+**Méthode conseillée (sans blocage de sécurité)** : ouvrez l'application *Terminal* (Launchpad > Autres > Terminal), collez cette ligne puis appuyez sur Entrée :
+
+```
+curl -fsSL https://raw.githubusercontent.com/Nerdyeu/Hello-Asso-Tool/main/install-mac.sh | bash
+```
+
+L'outil s'installe dans *Applications* (bonne version Apple Silicon ou Intel choisie automatiquement) et s'ouvre. Ensuite, lancez **Trombinoscope** depuis le Launchpad ou le dossier Applications comme n'importe quelle application. Pour mettre à jour, recollez la même ligne.
+
+**Méthode manuelle** :
+
 1. Dans les **[Releases](../../releases/latest)**, téléchargez `Trombinoscope-Mac-AppleSilicon.zip` (Mac M1 à M4) ou `Trombinoscope-Mac-Intel.zip` (Mac plus anciens). En cas de doute : menu  > *À propos de ce Mac*.
-2. Décompressez le zip (double-clic), puis **clic droit sur `Trombinoscope` > Ouvrir** et confirmez. Ce n'est nécessaire qu'au premier lancement, car l'application n'est pas signée par Apple. Sinon : *Réglages Système > Confidentialité et sécurité > Ouvrir quand même*.
-3. Le navigateur s'ouvre tout seul sur l'outil, sans Terminal. Utilisez le bouton **Quitter** de la page pour fermer l'outil (il se ferme aussi quelques minutes après la fermeture de l'onglet).
-4. Suite identique à Windows. Les réglages sont dans `~/Library/Application Support/Trombinoscope-HelloAsso/`.
+2. Décompressez le zip (double-clic) et double-cliquez sur `Trombinoscope`. macOS refuse de l'ouvrir car l'application n'est pas signée par Apple : cliquez sur **Terminé**, puis allez dans *Réglages Système > Confidentialité et sécurité*, tout en bas, et cliquez sur **Ouvrir quand même** (mot de passe demandé). Relancez l'application et confirmez. Ce n'est nécessaire qu'au premier lancement.
+
+Dans les deux cas :
+
+- Le navigateur s'ouvre tout seul sur l'outil. Utilisez le bouton **Quitter** de la page pour fermer l'outil (il se ferme aussi tout seul 30 minutes après la fermeture de l'onglet). Si la page indique que l'application est fermée, relancez-la et rechargez la page.
+- Suite identique à Windows. Les réglages sont dans `~/Library/Application Support/Trombinoscope-HelloAsso/`.
 
 ## Utilisation
 

@@ -6,6 +6,16 @@ const { exec } = require('child_process');
 
 const IS_PKG = typeof process.pkg !== 'undefined';
 const APP_DIR = IS_PKG ? path.dirname(process.execPath) : __dirname;
+
+// Mac (.app lancée depuis le Finder) : on relance le serveur en tâche de fond et on rend la main aussitôt.
+// Sinon macOS considère l'appli « déjà ouverte » et un nouveau double-clic ne fait rien
+// (l'ancienne instance n'est alors jamais remplacée et le navigateur ne se rouvre pas).
+if (IS_PKG && process.platform === 'darwin' && !process.env.TROMBI_DETACHED && process.execPath.includes('.app/Contents/MacOS/')) {
+  require('child_process').spawn(process.execPath, process.argv.slice(1), {
+    detached: true, stdio: 'ignore', env: { ...process.env, TROMBI_DETACHED: '1' }
+  }).unref();
+  process.exit(0);
+}
 // Les réglages sont stockés dans %APPDATA% : conservés même si l'exe est remplacé ou déplacé
 const os = require('os');
 const DATA_ROOT = process.platform === 'win32' ? (process.env.APPDATA || APP_DIR)
@@ -234,20 +244,23 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Ferme l'appli quand l'onglet est fermé (plus de signal depuis 3 minutes)
+// Ferme l'appli quand l'onglet est fermé : plus aucun signal de la page depuis 30 minutes
+// (ou page jamais ouverte). Délai large : Safari et la mise en veille suspendent les signaux.
+const IDLE_MS = 30 * 60000, STARTED = Date.now();
 let lastPing = 0;
-setInterval(() => { if (lastPing && Date.now() - lastPing > 180000) process.exit(0); }, 15000).unref();
+setInterval(() => { if (Date.now() - (lastPing || STARTED) > IDLE_MS) process.exit(0); }, 30000).unref();
 
+const APP_URL = `http://127.0.0.1:${PORT}`;  // 127.0.0.1 plutôt que localhost (évite un essai en IPv6 ::1)
 let retried = false;
 function start() {
   server.listen(PORT, '127.0.0.1', () => {
-    console.log(`Trombinoscope prêt : http://localhost:${PORT}  (fermez cette fenêtre pour quitter)`);
-    openBrowser(`http://localhost:${PORT}`);
+    console.log(`Trombinoscope prêt : ${APP_URL}  (fermez cette fenêtre pour quitter)`);
+    openBrowser(APP_URL);
   });
 }
 server.on('error', async e => {
   if (e.code !== 'EADDRINUSE') throw e;
-  if (retried) { openBrowser(`http://localhost:${PORT}`); return process.exit(0); }
+  if (retried) { openBrowser(APP_URL); return process.exit(0); }
   retried = true;  // une ancienne instance tourne : on la ferme puis on prend sa place
   try { await fetch(`http://127.0.0.1:${PORT}/api/quit`); } catch {}
   setTimeout(start, 800);

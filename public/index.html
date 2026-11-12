@@ -18,6 +18,8 @@
   main { padding:20px; max-width:1100px; margin:auto; }
   #msg { color:var(--muted); margin:8px 0 16px; }
   #msg.err { color:var(--danger); }
+  .offline { background:var(--danger); color:#fff; padding:10px 14px; border-radius:8px; margin-bottom:12px; font-weight:600; }
+  .offline[hidden] { display:none; }
   .options { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-bottom:12px; color:var(--muted); font-size:.9rem; }
   .options input[type=text] { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink); }
 
@@ -75,6 +77,7 @@
 </header>
 <main>
   <div id="screen">
+    <div id="offline" class="offline" hidden>L'application Trombinoscope est fermée. Relancez-la, puis rechargez cette page.</div>
     <section id="dlg" class="panel" hidden>
       <h3>Réglages HelloAsso</h3>
       <small>Saisis une seule fois : ils sont mémorisés sur cet ordinateur.</small>
@@ -283,8 +286,13 @@ $('btnQuit').onclick = async () => {
 ['title', 'showDate', 'filter'].forEach(id => $(id).addEventListener('input', render));
 
 // signale au programme que la page est ouverte (il se ferme tout seul quand l'onglet est fermé)
-const ping = () => fetch('/api/ping').catch(() => {});
+// si l'application s'est fermée entre-temps, on le dit au lieu d'échouer sans explication
+const ping = () => fetch('/api/ping')
+  .then(r => { $('offline').hidden = r.ok; })
+  .catch(() => { $('offline').hidden = false; });
 ping(); setInterval(ping, 20000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) ping(); });
+window.addEventListener('focus', ping);
 load();
 </script>
 </body>
