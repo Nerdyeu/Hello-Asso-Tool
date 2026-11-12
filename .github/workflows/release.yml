@@ -23,6 +23,18 @@ jobs:
         with:
           name: windows
           path: dist/Trombinoscope.exe
+      - name: Ajouter à la Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # chaque système est publié dès qu'il est prêt (les Mac attendent parfois longtemps une machine chez GitHub)
+          # Release créée par le premier job prêt ; si deux jobs la créent en même temps, le second la trouve ensuite
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME" \
+            || gh release view "$GITHUB_REF_NAME" >/dev/null
+          gh release upload "$GITHUB_REF_NAME" dist/Trombinoscope.exe --clobber
 
   mac:
     runs-on: macos-latest
@@ -48,6 +60,17 @@ jobs:
         with:
           name: mac
           path: Trombinoscope-Mac-*.zip
+      - name: Ajouter à la Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # chaque système est publié dès qu'il est prêt (les Mac attendent parfois longtemps une machine chez GitHub)
+          # Release créée par le premier job prêt ; si deux jobs la créent en même temps, le second la trouve ensuite
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME" \
+            || gh release view "$GITHUB_REF_NAME" >/dev/null
+          gh release upload "$GITHUB_REF_NAME" Trombinoscope-Mac-AppleSilicon.zip Trombinoscope-Mac-Intel.zip --clobber
 
   android:
     runs-on: ubuntu-latest
@@ -90,20 +113,15 @@ jobs:
         with:
           name: android
           path: Trombinoscope-Android.apk
+      - name: Ajouter à la Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # chaque système est publié dès qu'il est prêt (les Mac attendent parfois longtemps une machine chez GitHub)
+          # Release créée par le premier job prêt ; si deux jobs la créent en même temps, le second la trouve ensuite
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME" \
+            || gh release view "$GITHUB_REF_NAME" >/dev/null
+          gh release upload "$GITHUB_REF_NAME" Trombinoscope-Android.apk --clobber
 
-  release:
-    needs: [windows, mac, android]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/Trombinoscope.exe
-            artifacts/Trombinoscope-Mac-*.zip
-            artifacts/Trombinoscope-Android.apk
-          generate_release_notes: true

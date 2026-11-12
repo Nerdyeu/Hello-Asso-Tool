@@ -20,7 +20,15 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 echo "Téléchargement de $ASSET…"
-curl -fL --progress-bar "$URL" -o "$TMP/app.zip"
+if ! curl -fL --progress-bar "$URL" -o "$TMP/app.zip"; then
+  # la toute dernière version est publiée système par système : si son fichier Mac n'est pas encore prêt,
+  # on prend la version la plus récente qui l'a déjà
+  echo "Version Mac la plus récente pas encore prête, recherche de la précédente…"
+  URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=10" \
+    | grep -o "\"browser_download_url\": *\"[^\"]*/$ASSET\"" | head -1 | sed 's/.*"\(https[^"]*\)"/\1/')"
+  [ -n "$URL" ] || { echo "Aucune version Mac disponible pour le moment. Réessayez dans quelques minutes."; exit 1; }
+  curl -fL --progress-bar "$URL" -o "$TMP/app.zip"
+fi
 
 # ferme une éventuelle version en cours d'exécution avant de la remplacer
 pkill -f "Trombinoscope.app/Contents/MacOS/" 2>/dev/null || true
