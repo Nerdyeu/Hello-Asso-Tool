@@ -31,18 +31,37 @@
   }
   const publicConfig = c => ({ ...c, clientSecret: c.clientSecret ? SECRET_MASK : '' });
 
-  // ---------- Photos : uniquement depuis les serveurs HelloAsso ----------
-  const PHOTO_HOSTS = ['stockagehelloassoprod.blob.core.windows.net'];  // stockage de fichiers de HelloAsso (noms exacts)
+  // ---------- Photos ----------
+  // Adresses acceptées : en https, sur un serveur HelloAsso (nom contenant « helloasso ») ou sur son stockage de fichiers.
+  // La sécurité ne repose pas sur ce filtre : le jeton d'accès n'est envoyé qu'à l'API HelloAsso (voir isApiUrl),
+  // et seules de vraies images, reconnues à leur contenu, sont renvoyées à la page.
+  const PHOTO_HOSTS = ['stockagehelloassoprod.blob.core.windows.net'];
   function photoUrl(raw, api = DEFAULT_API) {
     let u;
-    try { u = new URL(raw); } catch { return null; }
+    try { u = new URL(String(raw).trim()); } catch { return null; }
     if (u.username || u.password) return null;
     const h = u.hostname.toLowerCase();
-    const helloasso = u.protocol === 'https:' && !u.port
-      && (h === 'helloasso.com' || h.endsWith('.helloasso.com') || PHOTO_HOSTS.includes(h));
+    const helloasso = u.protocol === 'https:' && !u.port && (h.includes('helloasso') || PHOTO_HOSTS.includes(h));
     return helloasso || u.origin === new URL(api).origin ? u : null;   // (2e cas : API de test)
   }
-  const PHOTO_TYPE = /^image\/(jpeg|png|gif|webp|heic|heif|avif|bmp)$/;   // jamais de HTML ni de SVG
+  // type réel d'une image d'après ses premiers octets (l'étiquette envoyée par le serveur n'est pas fiable) ;
+  // null si ce n'est pas une image connue (HTML, SVG, PDF… sont donc toujours refusés)
+  function imageType(b) {
+    if (!b || b.length < 12) return null;
+    const at = (i, ...v) => v.every((x, k) => b[i + k] === x);
+    const str = (i, n) => String.fromCharCode(...Array.from(b.slice(i, i + n)));
+    if (at(0, 0xFF, 0xD8, 0xFF)) return 'image/jpeg';
+    if (at(0, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) return 'image/png';
+    if (str(0, 4) === 'GIF8') return 'image/gif';
+    if (str(0, 4) === 'RIFF' && str(8, 4) === 'WEBP') return 'image/webp';
+    if (at(0, 0x42, 0x4D)) return 'image/bmp';
+    if (str(4, 4) === 'ftyp') {
+      const brand = str(8, 4);
+      if (/^avi[fs]$/.test(brand)) return 'image/avif';
+      if (/^(hei[cmsx]|hev[cmsx]|mif1|msf1)$/.test(brand)) return 'image/heic';
+    }
+    return null;
+  }
   const MAX_PHOTO = 15 * 1024 * 1024;
 
   // ---------- Lecture des adhésions ----------
@@ -158,11 +177,15 @@
         const o = await apiGet(cfg, `${api}/v5/organizations/${encodeURIComponent(cfg.organizationSlug)}`);
         return { ok: true, name: o.name || cfg.organizationSlug };
       },
-      async debug(cfg) { const items = await fetchItems(cfg); return { total: items.length, premier: items[0] || null }; },
+      async debug(cfg) {
+        const items = await fetchItems(cfg);
+        const photos = items.map(i => findPhoto(i, cfg.photoField)).filter(Boolean);
+        return { total: items.length, avecPhoto: photos.length, exemplesPhoto: photos.slice(0, 3), premier: items[0] || null };
+      },
       // le jeton ne doit accompagner que les appels directs à l'API (jamais une photo hébergée ailleurs)
       isApiUrl: u => u.origin === new URL(api).origin,
     };
   }
 
-  return { DEFAULT_API, DEFAULT_CONFIG, SECRET_MASK, isStr, mergeConfig, publicConfig, photoUrl, PHOTO_TYPE, MAX_PHOTO, buildMembers, createClient };
+  return { DEFAULT_API, DEFAULT_CONFIG, SECRET_MASK, isStr, mergeConfig, publicConfig, photoUrl, imageType, MAX_PHOTO, findPhoto, buildMembers, createClient };
 });

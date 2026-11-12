@@ -89,19 +89,44 @@ function rejectReason(req, pathname) {
   return null;
 }
 
-// Photos : le jeton d'accès n'est envoyé qu'à l'API HelloAsso elle-même, jamais en cas de redirection
+// Photos : téléchargement, puis vérification que c'est bien une image (d'après son contenu)
+async function getImage(u, headers = {}, redirect = 'follow') {
+  const r = await fetch(u, { headers, redirect });
+  const info = { status: r.status, contentType: r.headers.get('content-type') || '' };
+  if (r.status >= 300 && r.status < 400) return { ...info, location: r.headers.get('location') };
+  if (!r.ok) return info;
+  if (Number(r.headers.get('content-length') || 0) > core.MAX_PHOTO) return { ...info, tooBig: true };
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (buf.length > core.MAX_PHOTO) return { ...info, tooBig: true };
+  return { ...info, buf, type: core.imageType(buf) };
+}
+// Le jeton d'accès n'est envoyé qu'à l'API HelloAsso elle-même, et jamais en cas de redirection.
+// On l'essaie aussi quand la réponse sans jeton n'est pas une image (page « non autorisé » renvoyée en 200).
 async function fetchPhoto(u, cfg) {
-  let r = await fetch(u);
-  if (!r.ok && client.isApiUrl(u)) {
-    r = await fetch(u, { headers: { Authorization: 'Bearer ' + await client.getToken(cfg) }, redirect: 'manual' });
-    const loc = r.status >= 300 && r.status < 400 && r.headers.get('location');
-    if (loc) {
-      const next = new URL(loc, u);
+  let res = await getImage(u);
+  if (!res.type && client.isApiUrl(u)) {
+    res = await getImage(u, { Authorization: 'Bearer ' + await client.getToken(cfg) }, 'manual');
+    if (res.location) {
+      const next = new URL(res.location, u);
       if (next.protocol !== 'https:' && next.origin !== u.origin) throw new Error('Redirection refusée');
-      r = await fetch(next);
+      res = await getImage(next);
     }
   }
-  return r;
+  return res;
+}
+const photoProblem = res => res.tooBig ? 'Photo trop volumineuse'
+  : res.status < 200 || res.status >= 300 ? `Photo inaccessible (HTTP ${res.status})`
+  : !res.type ? `Ce fichier n'est pas une image reconnue (type annoncé : ${res.contentType || 'aucun'})` : null;
+
+// test de la 1re photo, pour le bouton Diagnostic
+async function photoReport(cfg, raw) {
+  if (!raw) return 'Aucune photo trouvée dans les adhésions (vérifiez « Nom du champ photo »)';
+  const u = core.photoUrl(raw, API);
+  if (!u) return { adresse: raw, resultat: 'Adresse refusée (serveur non HelloAsso ou non https)' };
+  try {
+    const res = await fetchPhoto(u, cfg);
+    return { adresse: raw, http: res.status, typeAnnonce: res.contentType, typeReel: res.type || null, resultat: photoProblem(res) || 'OK' };
+  } catch (e) { return { adresse: raw, resultat: 'Erreur : ' + e.message }; }
 }
 
 const isStr = core.isStr;
@@ -161,18 +186,17 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, read());
     }
     if (url.pathname === '/api/debug') {  // 1er item brut, pour diagnostiquer les champs
-      return send(res, 200, await client.debug(loadConfig()));
+      const cfg = loadConfig(), d = await client.debug(cfg);
+      return send(res, 200, { testPhoto: await photoReport(cfg, d.exemplesPhoto[0]), ...d });
     }
     if (url.pathname === '/api/photo') {
       const u = core.photoUrl(url.searchParams.get('u') || '', API);
       if (!u) return send(res, 400, { error: 'URL refusée' });
       const r = await fetchPhoto(u, loadConfig());
-      if (!r.ok) return send(res, 502, { error: 'Photo inaccessible (' + r.status + ')' });
-      const type = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-      if (!core.PHOTO_TYPE.test(type)) return send(res, 415, { error: 'Ce fichier n\'est pas une photo' });
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.length > core.MAX_PHOTO) return send(res, 413, { error: 'Photo trop volumineuse' });
-      return send(res, 200, buf, type, { 'Cache-Control': 'private, max-age=3600', 'Content-Security-Policy': "default-src 'none'; sandbox" });
+      const problem = photoProblem(r);
+      if (problem) return send(res, r.tooBig ? 413 : r.status >= 200 && r.status < 300 ? 415 : 502, { error: problem });
+      // le type envoyé à la page est celui reconnu dans le contenu, jamais celui annoncé par le serveur distant
+      return send(res, 200, r.buf, r.type, { 'Cache-Control': 'private, max-age=3600', 'Content-Security-Policy': "default-src 'none'; sandbox" });
     }
     if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Introuvable' });
     // fichiers statiques (uniquement dans le dossier public)

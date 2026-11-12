@@ -37,27 +37,51 @@
 
   // ---------- photos ----------
   // le jeton n'accompagne que l'appel direct à l'API HelloAsso ; une redirection est suivie sans lui
+  // téléchargement natif, puis vérification que c'est bien une image (d'après son contenu)
+  async function getImage(url, headers = {}, disableRedirects = false) {
+    const r = await Http.request({ url: String(url), method: 'GET', headers, responseType: 'blob', disableRedirects });
+    const info = { status: r.status, contentType: header(r.headers, 'content-type') };
+    if (r.status >= 300 && r.status < 400) return { ...info, location: header(r.headers, 'location') };
+    if (r.status < 200 || r.status >= 300) return info;
+    const b64 = String(r.data || '').replace(/\s/g, '');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) return info;
+    if (b64.length * 0.75 > core.MAX_PHOTO) return { ...info, tooBig: true };
+    const head = Uint8Array.from(atob(b64.slice(0, 64)), c => c.charCodeAt(0));
+    return { ...info, b64, type: core.imageType(head) };
+  }
+  // le jeton n'accompagne que l'appel direct à l'API HelloAsso ; une redirection est suivie sans lui
+  async function fetchPhoto(u) {
+    let res = await getImage(u);
+    if (!res.type && client.isApiUrl(u)) {
+      res = await getImage(u, { Authorization: 'Bearer ' + await client.getToken(loadConfig()) }, true);
+      if (res.location) {
+        const next = new URL(res.location, u);
+        if (next.protocol !== 'https:') throw new Error('Redirection refusée');
+        res = await getImage(next);
+      }
+    }
+    return res;
+  }
+  const photoProblem = res => res.tooBig ? 'Photo trop volumineuse'
+    : res.status < 200 || res.status >= 300 ? `Photo inaccessible (HTTP ${res.status})`
+    : !res.type ? `Ce fichier n'est pas une image reconnue (type annoncé : ${res.contentType || 'aucun'})` : null;
   async function getPhoto(raw) {
     const u = core.photoUrl(raw);
     if (!u) throw new Error('URL refusée');
-    const get = (url, headers = {}, disableRedirects = false) =>
-      Http.request({ url: String(url), method: 'GET', headers, responseType: 'blob', disableRedirects });
-    let r = await get(u);
-    if ((r.status < 200 || r.status >= 300) && client.isApiUrl(u)) {
-      r = await get(u, { Authorization: 'Bearer ' + await client.getToken(loadConfig()) }, true);
-      const loc = r.status >= 300 && r.status < 400 && header(r.headers, 'location');
-      if (loc) {
-        const next = new URL(loc, u);
-        if (next.protocol !== 'https:') throw new Error('Redirection refusée');
-        r = await get(next);
-      }
-    }
-    if (r.status < 200 || r.status >= 300) throw new Error('Photo inaccessible (' + r.status + ')');
-    const type = header(r.headers, 'content-type').split(';')[0].trim().toLowerCase();
-    if (!core.PHOTO_TYPE.test(type)) throw new Error('Ce fichier n\'est pas une photo');
-    const b64 = String(r.data || '').replace(/\s/g, '');
-    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64) || b64.length * 0.75 > core.MAX_PHOTO) throw new Error('Photo invalide');
-    return `data:${type};base64,${b64}`;
+    const res = await fetchPhoto(u);
+    const problem = photoProblem(res);
+    if (problem) throw new Error(problem);
+    return `data:${res.type};base64,${res.b64}`;   // type reconnu dans le contenu, jamais celui annoncé
+  }
+  // test de la 1re photo, pour le bouton Diagnostic
+  async function photoReport(raw) {
+    if (!raw) return 'Aucune photo trouvée dans les adhésions (vérifiez « Nom du champ photo »)';
+    const u = core.photoUrl(raw);
+    if (!u) return { adresse: raw, resultat: 'Adresse refusée (serveur non HelloAsso ou non https)' };
+    try {
+      const res = await fetchPhoto(u);
+      return { adresse: raw, http: res.status, typeAnnonce: res.contentType, typeReel: res.type || null, resultat: photoProblem(res) || 'OK' };
+    } catch (e) { return { adresse: raw, resultat: 'Erreur : ' + (e.message || e) }; }
   }
   const photos = new Map();      // URL HelloAsso -> data: (cache le temps de la session)
   const pending = new Map();
@@ -85,7 +109,10 @@
           return ok(core.publicConfig(loadConfig()));
         case '/api/members': return ok(await client.members(loadConfig()));
         case '/api/test': return ok(await client.test(loadConfig()));
-        case '/api/debug': return ok(await client.debug(loadConfig()));
+        case '/api/debug': {
+          const d = await client.debug(loadConfig());
+          return ok({ testPhoto: await photoReport(d.exemplesPhoto[0]), ...d });
+        }
         case '/api/ping': return ok({ ok: true });
         case '/api/hidden': {
           const h = store.get('hidden', {});
@@ -125,7 +152,10 @@
       const run = async () => {
         for (let img; (img = imgs.shift());) {
           const d = await loadPhoto(img.dataset.photo);
-          if (d) document.querySelectorAll('img[data-photo]').forEach(i => { if (i.dataset.photo === img.dataset.photo) i.src = d; });
+          document.querySelectorAll('img[data-photo]').forEach(i => {
+            if (i.dataset.photo !== img.dataset.photo) return;
+            if (d) i.src = d; else if (window.photoFailed) window.photoFailed(i);   // « ? » si la photo est inaccessible
+          });
         }
       };
       await Promise.all([run(), run(), run(), run()]);

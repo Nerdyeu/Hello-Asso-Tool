@@ -154,6 +154,14 @@ function cardHtml(m, { interactive }) {
   </div>`;
 }
 
+// photo impossible à charger : « ? » comme pour un adhérent sans photo (la raison est donnée par le bouton Diagnostic)
+function photoFailed(img) {
+  const d = document.createElement('div');
+  d.className = 'photo noimg'; d.textContent = '?'; d.title = 'Photo non disponible (Réglages > Diagnostic pour en savoir plus)';
+  img.replaceWith(d);
+}
+document.addEventListener('error', e => { if (e.target.tagName === 'IMG' && e.target.classList.contains('photo')) photoFailed(e.target); }, true);
+
 function render() {
   const f = $('filter').value.trim().toLowerCase();
   const list = visible().filter(m => !f || (m.firstName + ' ' + m.lastName).toLowerCase().includes(f));
