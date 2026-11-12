@@ -1,0 +1,8 @@
+{
+  "appId": "fr.asso.trombinoscope",
+  "appName": "Trombinoscope",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}

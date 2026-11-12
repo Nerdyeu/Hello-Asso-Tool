@@ -1,0 +1,17 @@
+{
+  "name": "trombinoscope-android",
+  "version": "1.4.0",
+  "private": true,
+  "description": "Appli Android du Trombinoscope HelloAsso (Capacitor), à partir de ../public",
+  "scripts": {
+    "web": "node copy-web.js",
+    "sync": "node copy-web.js && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/core": "8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.2"
+  }
+}

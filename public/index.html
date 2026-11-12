@@ -2,15 +2,17 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Trombinoscope</title>
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#6b7280; --accent:#2f6fed; --line:#e3e6ec; --danger:#c0392b; }
   @media (prefers-color-scheme: dark) { :root { --bg:#14171d; --card:#1e232c; --ink:#e8ebf1; --muted:#9aa3b2; --line:#2b3240; } }
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
-  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:calc(14px + env(safe-area-inset-top, 0px)) 20px 14px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
   header h1 { font-size:1.15rem; margin:0 auto 0 0; }
+  /* téléphone : l'en-tête défile avec la page au lieu de rester fixé (il prend trop de place) */
+  @media (max-width:600px) { header { position:static; padding-left:16px; padding-right:16px; } header h1 { width:100%; } main { padding:16px; } }
   button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
   button:disabled { opacity:.5; cursor:not-allowed; }
@@ -80,7 +82,7 @@
     <div id="offline" class="offline" hidden>L'application Trombinoscope est fermée. Relancez-la, puis rechargez cette page.</div>
     <section id="dlg" class="panel" hidden>
       <h3>Réglages HelloAsso</h3>
-      <small>Saisis une seule fois : ils sont mémorisés sur cet ordinateur.</small>
+      <small>Saisis une seule fois : ils sont mémorisés sur cet appareil.</small>
       <label>Client ID</label><input id="cClientId" autocomplete="off">
       <label>Client Secret</label><input id="cClientSecret" type="password" autocomplete="off">
       <label>Slug de l'organisation <small>(dans l'URL de votre page HelloAsso)</small></label><input id="cOrg">
@@ -123,11 +125,15 @@
   <div id="printArea"></div>
 </main>
 
+<script src="core.js"></script>
+<script src="mobile.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const PER_PAGE = 20;
+// Appli Android : pas de serveur local, mobile.js répond lui-même aux appels /api/* (voir mobile.js)
+const MOBILE = window.TrombiMobile || null;
 // appels au programme local : l'en-tête X-Trombi prouve qu'ils viennent bien de cette page (pas d'un autre site)
-const api = (url, opts = {}) => fetch(url, { ...opts, headers: { 'X-Trombi': '1', 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+const api = MOBILE ? MOBILE.api : (url, opts = {}) => fetch(url, { ...opts, headers: { 'X-Trombi': '1', 'Content-Type': 'application/json', ...(opts.headers || {}) } });
 let members = [], hidden = {};
 const selected = new Set(), printed = new Set();
 const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
@@ -135,7 +141,8 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const visible = () => members.filter(m => !hidden[m.key]);
 
 function cardHtml(m, { interactive }) {
-  const photo = m.photo ? `<img class="photo" ${interactive ? 'loading="lazy"' : ''} src="/api/photo?u=${encodeURIComponent(m.photo)}" alt="">`
+  const photo = m.photo ? (MOBILE ? `<img class="photo" data-photo="${esc(m.photo)}" src="${MOBILE.photoSrc(m.photo)}" alt="">`
+                                  : `<img class="photo" ${interactive ? 'loading="lazy"' : ''} src="/api/photo?u=${encodeURIComponent(m.photo)}" alt="">`)
                         : `<div class="photo noimg">?</div>`;
   return `<div class="card${interactive && selected.has(m.key) ? ' sel' : ''}" data-key="${esc(m.key)}">
     ${interactive ? `<input type="checkbox" ${selected.has(m.key) ? 'checked' : ''}><button class="del" title="Retirer du trombinoscope (pas de suppression chez HelloAsso)">Retirer</button>` : ''}
@@ -151,6 +158,7 @@ function render() {
   const f = $('filter').value.trim().toLowerCase();
   const list = visible().filter(m => !f || (m.firstName + ' ' + m.lastName).toLowerCase().includes(f));
   $('grid').innerHTML = list.map(m => cardHtml(m, { interactive: true })).join('');
+  if (MOBILE) MOBILE.hydrate($('grid'));
   const n = visible().filter(m => selected.has(m.key)).length;
   $('btnPrint').textContent = `Trombinoscope (${n})`;
   $('btnPrint').disabled = n === 0;
@@ -225,16 +233,30 @@ $('btnNone').onclick = () => { selected.clear(); render(); };
 $('btnNew').onclick = () => { selected.clear(); visible().filter(m => !printed.has(m.key)).forEach(m => selected.add(m.key)); render(); };
 
 // ----- impression -----
-$('btnPrint').onclick = () => { buildPrint(); window.print(); };
-window.addEventListener('beforeprint', buildPrint);
-window.addEventListener('afterprint', async () => {
+$('btnPrint').onclick = async () => {
+  buildPrint();
+  if (!MOBILE) return window.print();
+  // Android : on attend que toutes les photos soient chargées, puis fenêtre d'impression d'Android
+  const b = $('btnPrint'), label = b.textContent;
+  b.disabled = true; b.textContent = 'Préparation…';
+  try {
+    await MOBILE.hydrate($('printArea'));
+    // rend la main quand la fenêtre d'impression est fermée (aucune boîte de dialogue avant : elle bloquerait l'aperçu)
+    const r = await MOBILE.print($('title').value);
+    if (r && r.done) await markPrinted();
+  } catch (e) { alert('Impression impossible : ' + (e.message || e)); }
+  finally { b.textContent = label; render(); }
+};
+window.addEventListener('beforeprint', () => { if (!MOBILE) buildPrint(); });
+window.addEventListener('afterprint', () => { if (!MOBILE) markPrinted(); });
+async function markPrinted() {
   const keys = visible().filter(m => selected.has(m.key)).map(m => m.key);
   if (!keys.length) return;
   if (confirm(`Marquer ces ${keys.length} adhérent(s) comme imprimés ?\n(« Sélectionner les nouveaux » ne les proposera plus.)`)) {
     await api('/api/printed', { method: 'POST', body: JSON.stringify(keys) });
     keys.forEach(k => printed.add(k)); render();
   }
-});
+}
 
 // ----- réglages -----
 async function openSettings() {
@@ -285,6 +307,7 @@ $('btnQuit').onclick = async () => {
   try { await api('/api/quit', { method: 'POST' }); } catch {}
   document.body.innerHTML = '<p style="padding:40px;font-family:sans-serif">Application fermée. Vous pouvez fermer cet onglet.</p>';
 };
+if (MOBILE) $('btnQuit').hidden = true;   // sur Android, on quitte l'appli normalement
 ['title', 'showDate', 'filter'].forEach(id => $(id).addEventListener('input', render));
 
 // signale au programme que la page est ouverte (il se ferme tout seul quand l'onglet est fermé)

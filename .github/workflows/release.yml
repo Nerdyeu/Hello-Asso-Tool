@@ -49,8 +49,50 @@ jobs:
           name: mac
           path: Trombinoscope-Mac-*.zip
 
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Préparer la page web de l'appli
+        working-directory: mobile
+        run: |
+          npm ci
+          npm run sync
+      - name: Compiler l'APK signé
+        working-directory: mobile/android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          TROMBI_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$TROMBI_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Secrets ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD manquants (voir README)"; exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
+          export TROMBI_KEYSTORE="$RUNNER_TEMP/release.p12"
+          # version Android tirée du tag : v1.4.0 -> versionName 1.4.0, versionCode 10400
+          V="${GITHUB_REF_NAME#v}"
+          if ! [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then V="0.0.1"; fi
+          IFS=. read -r MA MI PA <<< "$V"
+          export TROMBI_VERSION_NAME="$V" TROMBI_VERSION_CODE=$((MA * 10000 + MI * 100 + PA))
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify app/build/outputs/apk/release/app-release.apk
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/Trombinoscope-Android.apk"
+          rm -f "$RUNNER_TEMP/release.p12"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: Trombinoscope-Android.apk
+
   release:
-    needs: [windows, mac]
+    needs: [windows, mac, android]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -63,4 +105,5 @@ jobs:
           files: |
             artifacts/Trombinoscope.exe
             artifacts/Trombinoscope-Mac-*.zip
+            artifacts/Trombinoscope-Android.apk
           generate_release_notes: true

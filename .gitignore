@@ -3,3 +3,5 @@ dist/
 config.json
 printed.json
 *.log
+mobile/node_modules/
+mobile/www/

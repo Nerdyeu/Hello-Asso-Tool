@@ -1,6 +1,6 @@
 {
   "name": "trombinoscope-helloasso",
-  "version": "1.3.3",
+  "version": "1.4.0",
   "description": "Trombinoscope des adhérents depuis l'API HelloAsso",
   "main": "server.js",
   "bin": "server.js",
