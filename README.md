@@ -41,14 +41,90 @@ Dans les deux cas :
 
 Les réglages restent dans la mémoire privée de l'appli (ils sont effacés si on la désinstalle).
 
-## Utilisation
+## Guide d'utilisation
 
-- Seules les adhésions (pas les dons) des adhérents ayant payé **100, 110, 160 ou 170 €** sont retenus (modifiable dans **Réglages > Montants payés**). Les doublons sont fusionnés, et la fiche avec photo est toujours conservée.
-- Cochez les adhérents à inclure (clic sur la carte). Le bouton **Retirer** d'une carte la masque du trombinoscope (uniquement dans l'outil, rien n'est supprimé chez HelloAsso) ; **Retirés** permet de la remettre. **Sélectionner les nouveaux** coche ceux jamais imprimés.
-- Cliquez sur **Trombinoscope (n)** pour imprimer ou exporter en PDF : 20 adhérents maximum par page A4 (5 colonnes x 4 lignes).
-- Après l'impression, l'outil propose de marquer ces adhérents comme imprimés.
+### 1. Premier lancement : les réglages (une seule fois)
 
-Les réglages et la liste des « déjà imprimés » sont stockés dans `%APPDATA%\Trombinoscope-HelloAsso\` sur votre ordinateur. Rien n'est envoyé ailleurs qu'à HelloAsso.
+Il faut trois informations, à récupérer sur HelloAsso avec un compte administrateur de l'association :
+
+| Réglage | Où le trouver |
+|---|---|
+| **Client ID** et **Client Secret** | HelloAsso > *Mon compte* > *Intégrations et API* |
+| **Slug de l'organisation** | Dans l'adresse de la page HelloAsso de l'association : `helloasso.com/associations/`**`mon-asso`** → le slug est `mon-asso` |
+
+1. Cliquez sur **Réglages** (la page s'ouvre directement dessus la première fois).
+2. Remplissez ces trois champs. Laissez les autres tels quels.
+3. Cliquez sur **Tester la connexion** : le nom de l'association doit s'afficher en vert.
+4. Cliquez sur **Enregistrer**. La liste des adhérents se charge.
+
+Le **Client Secret** est un mot de passe : ne le communiquez pas, ne l'envoyez pas par e-mail.
+
+### 2. Faire un trombinoscope
+
+1. Cliquez sur **Actualiser** pour récupérer les dernières adhésions.
+2. Choisissez les adhérents à imprimer :
+   - un clic sur une carte la coche ou la décoche ;
+   - **Tout sélectionner** / **Tout désélectionner** ;
+   - **Sélectionner les nouveaux** coche seulement ceux qui n'ont jamais été imprimés (pratique en cours d'année) ;
+   - **Filtre** : tapez un nom pour retrouver quelqu'un.
+3. Si besoin, changez le **Titre** (en haut de chaque page) et cochez ou non **Afficher la date d'adhésion**.
+4. Cliquez sur **Trombinoscope (n)** (n = nombre d'adhérents cochés). Choisissez une imprimante, ou **Enregistrer au format PDF**. 20 adhérents par page A4.
+5. Après l'impression, l'outil demande s'il faut **marquer ces adhérents comme imprimés** : répondez **OK** pour qu'ils ne soient plus proposés par « Sélectionner les nouveaux ». Un badge vert « déjà imprimé » s'affiche sur leur carte.
+
+### 3. Retirer quelqu'un du trombinoscope
+
+- Le bouton **Retirer** d'une carte la cache de l'outil (par exemple une personne qui ne souhaite pas y figurer). **Rien n'est supprimé chez HelloAsso.**
+- Pour la remettre : bouton **Retirés (n)**, puis **Remettre** à côté de son nom.
+
+### 4. Qui apparaît dans la liste ?
+
+- Seulement les **adhésions** (pas les dons), payées, non annulées ni remboursées.
+- Seulement les montants payés listés dans **Réglages > Montants payés à retenir** (par défaut 100, 110, 160 et 170 €). Videz ce champ pour garder tous les montants.
+- Une personne qui a adhéré plusieurs fois n'apparaît qu'une fois, avec la fiche qui a une photo.
+- Une carte avec **?** à la place de la photo : l'adhérent n'a pas fourni de photo sur HelloAsso.
+
+Si la liste est vide, le message affiché indique les montants et formulaires trouvés : ajustez **Montants payés à retenir** en conséquence. Le bouton **Diagnostic** (dans Réglages) montre une adhésion brute telle que HelloAsso la renvoie, utile pour signaler un problème.
+
+### 5. Fermer l'outil
+
+- **Windows / Mac** : bouton **Quitter** en haut de la page. Sinon, l'outil s'arrête tout seul 30 minutes après la fermeture de l'onglet.
+- **Android** : quittez l'appli normalement.
+
+### Où sont stockées les données ?
+
+Uniquement sur l'appareil, rien n'est envoyé ailleurs qu'à HelloAsso :
+
+- Windows : `%APPDATA%\Trombinoscope-HelloAsso\`
+- Mac : `~/Library/Application Support/Trombinoscope-HelloAsso/`
+- Android : mémoire privée de l'appli (effacée si on la désinstalle)
+
+## Dépannage Mac
+
+**Avant tout**, installez avec la ligne de Terminal (voir *Sur Mac* plus haut) : elle évite presque tous les blocages.
+
+| Problème | Solution |
+|---|---|
+| « Apple n'a pas pu confirmer… », « développeur non identifié » ou « endommagé » | Cliquez sur **Terminé** (pas « Corbeille »), puis *Réglages Système > Confidentialité et sécurité* > tout en bas **Ouvrir quand même**. Relancez et confirmez **Ouvrir**. Sinon, dans le Terminal : `xattr -dr com.apple.quarantine /Applications/Trombinoscope.app` puis relancez. |
+| Double-clic sans effet (pas de message, pas de navigateur) | Une ancienne instance tourne encore : *Moniteur d'activité* > « Trombinoscope » > **✕** > **Forcer à quitter**, puis relancez. Ou dans le Terminal : `pkill -f Trombinoscope.app` |
+| L'outil tourne mais le navigateur ne s'ouvre pas | Ouvrez vous-même **http://127.0.0.1:3737** dans Safari ou Chrome. |
+| Bandeau rouge « L'application Trombinoscope est fermée » | Arrêt automatique après 30 min d'inactivité : relancez l'appli puis rechargez la page (**Cmd + R**). |
+| « Ne peut pas être ouverte » / « non prise en charge sur ce Mac » | Mauvaise version : menu  > *À propos de ce Mac*. Puce Apple M1 à M4 → **AppleSilicon** ; Processeur Intel → **Intel**. La ligne de Terminal choisit automatiquement. |
+| Le script affiche `curl: (6)`, `(7)` ou `(22)` | Problème de connexion ou GitHub indisponible : réessayez un peu plus tard. |
+
+**Repartir de zéro** (les réglages sont conservés) :
+
+```
+pkill -f Trombinoscope.app; rm -rf /Applications/Trombinoscope.app
+curl -fsSL https://raw.githubusercontent.com/Nerdyeu/Hello-Asso-Tool/main/install-mac.sh | bash
+```
+
+Pour effacer aussi les réglages : `rm -rf ~/Library/Application\ Support/Trombinoscope-HelloAsso`
+
+**Si rien ne marche**, notez la version de macOS (menu  > *À propos de ce Mac*), le message exact (ou une capture d'écran), et ce qu'affiche cette commande dans le Terminal (arrêt avec **Ctrl + C**) :
+
+```
+/Applications/Trombinoscope.app/Contents/MacOS/Trombinoscope
+```
 
 ## Pour les développeurs
 
